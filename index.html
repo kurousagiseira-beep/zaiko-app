@@ -55,7 +55,7 @@
     .item:last-child{border-bottom:0}
     .name{font-weight:800;font-size:17px}
     .qty{font-size:14px;color:var(--sub);margin-top:4px}
-    .actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}\n    .stepper{display:flex;gap:8px;align-items:center}\n    .stepper button{min-width:42px;font-size:20px;padding:8px 12px}\n    .stepper strong{min-width:30px;text-align:center;font-size:19px}
     .empty{text-align:center;color:var(--sub);padding:28px 8px}
     dialog{
       width:min(92vw,520px); border:0; border-radius:18px; padding:0; box-shadow:0 24px 60px rgba(0,0,0,.2)
@@ -143,7 +143,7 @@
   } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-auth.js";
   import {
     getFirestore, collection, addDoc, updateDoc, deleteDoc, doc,
-    onSnapshot, serverTimestamp, query, orderBy
+    onSnapshot, serverTimestamp, query, orderBy, runTransaction
   } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -230,7 +230,7 @@
       <div class="item">
         <div>
           <div class="name">${escapeHtml(x.name)}</div>
-          <div class="qty">在庫：${Number(x.quantity ?? 0)} 個</div>
+          <div class="qty">在庫数</div>
         </div>
         <div class="actions">
           <button class="secondary small" data-edit="${x.id}">編集</button>
@@ -243,6 +243,25 @@
   $("search").addEventListener("input", renderItems);
 
   $("items").addEventListener("click", async (e) => {
+    const step = e.target.dataset.step;
+    const stepId = e.target.dataset.id;
+    if(step && stepId){
+      const button = e.target;
+      button.disabled = true;
+      try{
+        await runTransaction(db, async (transaction) => {
+          const ref = doc(db,"inventory",stepId);
+          const snapshot = await transaction.get(ref);
+          if(!snapshot.exists()) throw new Error("商品が見つかりません");
+          const current = Number(snapshot.data().quantity ?? 0);
+          const next = current + Number(step);
+          if(next < 0) return;
+          transaction.update(ref,{quantity:next,updatedAt:serverTimestamp()});
+        });
+      }catch(err){console.error(err);alert("在庫数を変更できませんでした。もう一度お試しください。");}
+      finally{button.disabled=false;}
+      return;
+    }
     const editId = e.target.dataset.edit;
     const deleteId = e.target.dataset.delete;
 
