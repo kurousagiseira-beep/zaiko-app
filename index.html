@@ -110,7 +110,7 @@
           <h2 style="margin:0 0 4px">在庫一覧</h2>
           <div class="muted">追加・変更・削除は全員に反映されます。</div>
         </div>
-        <button id="addBtn" class="primary small">＋ 追加</button>
+        <div class="row" style="flex-wrap:wrap;justify-content:flex-end"><button id="importMenuBtn" class="secondary small">メニュー商品を一括登録</button><button id="addBtn" class="primary small">＋ 追加</button></div>
       </div>
 
       <div class="toolbar" style="margin-top:16px">
@@ -148,7 +148,7 @@
   } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-auth.js";
   import {
     getFirestore, collection, addDoc, updateDoc, deleteDoc, doc,
-    onSnapshot, serverTimestamp, query, orderBy, runTransaction
+    onSnapshot, serverTimestamp, query, orderBy, runTransaction, writeBatch, getDocs
   } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -289,6 +289,26 @@
         await deleteDoc(doc(db,"inventory",deleteId));
       }
     }
+  });
+
+  const menuProductNames = ["オレンジジュース","アップルジュース","パイナップルジュース","マンゴージュース","ストレートティー","ミルクティー","レモンティー","ジャスミンティー","コーラ","レッドブル","モンスター（緑）","モンスター（青）","カルピス","炭酸水","緑茶","烏龍茶","ミネラルウォーター","アサヒ瓶ビール","スラット","レモンサワー","ハイボール","花山","壱岐","JAPAN","鍛高譚","梅酒","柚子小町","吉四六","シンデレラ"];
+  $("importMenuBtn").addEventListener("click", async () => {
+    const button=$("importMenuBtn");
+    if(!confirm("Kissのメニュー商品を在庫0本で一括登録します。既に同じ名前の商品があれば登録しません。よろしいですか？")) return;
+    button.disabled=true;
+    try{
+      const snapshot=await getDocs(collection(db,"inventory"));
+      const existing=new Set(snapshot.docs.map(d=>String(d.data().name||"").trim().normalize("NFKC").toLowerCase()));
+      const missing=menuProductNames.filter(n=>!existing.has(n.trim().normalize("NFKC").toLowerCase()));
+      if(!missing.length){alert("登録対象の商品はすべて登録済みです。");return;}
+      const batch=writeBatch(db);
+      for(const name of missing){
+        batch.set(doc(collection(db,"inventory")),{name,quantity:0,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+      }
+      await batch.commit();
+      alert(missing.length+"商品を在庫0で登録しました。");
+    }catch(err){console.error(err);alert("一括登録に失敗しました。通信状態を確認して再度お試しください。");}
+    finally{button.disabled=false;}
   });
 
   $("addBtn").addEventListener("click", () => {
