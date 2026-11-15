@@ -233,6 +233,7 @@
           <div class="qty">在庫数</div>
         </div>
         <div class="actions">
+          <div class="stepper"><button class="secondary" data-step="-1" data-id="${x.id}" aria-label="1個減らす" ${Number(x.quantity ?? 0) <= 0 ? "disabled" : ""}>−</button><strong>${Number(x.quantity ?? 0)}</strong><button class="primary" data-step="1" data-id="${x.id}" aria-label="1個増やす">＋</button></div>
           <button class="secondary small" data-edit="${x.id}">編集</button>
           <button class="danger small" data-delete="${x.id}">削除</button>
         </div>
