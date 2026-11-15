@@ -55,7 +55,12 @@
     .item:last-child{border-bottom:0}
     .name{font-weight:800;font-size:17px}
     .qty{font-size:14px;color:var(--sub);margin-top:4px}
-    .actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}\n    .stepper{display:flex;gap:8px;align-items:center}\n    .stepper button{min-width:42px;font-size:20px;padding:8px 12px}\n    .stepper strong{min-width:30px;text-align:center;font-size:19px}
+    .actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .stepper{display:flex;gap:8px;align-items:center}
+    .stepper button{min-width:42px;font-size:20px;padding:8px 12px}
+    .stepper strong{min-width:30px;text-align:center;font-size:19px}
+    .stock-warning{display:inline-block;margin-top:6px;padding:4px 8px;border-radius:8px;background:#fee2e2;color:#991b1b;font-size:13px;font-weight:800}
+    .item.low-stock{background:#fff7f7;border-radius:10px;padding-left:10px;padding-right:10px}
     .empty{text-align:center;color:var(--sub);padding:28px 8px}
     dialog{
       width:min(92vw,520px); border:0; border-radius:18px; padding:0; box-shadow:0 24px 60px rgba(0,0,0,.2)
@@ -227,10 +232,11 @@
     }
 
     $("items").innerHTML = list.map(x => `
-      <div class="item">
+      <div class="item ${Number(x.quantity ?? 0) <= 3 ? "low-stock" : ""}">
         <div>
           <div class="name">${escapeHtml(x.name)}</div>
           <div class="qty">在庫数</div>
+          ${Number(x.quantity ?? 0) === 0 ? '<div class="stock-warning">⚠️ 在庫切れ</div>' : Number(x.quantity ?? 0) <= 3 ? '<div class="stock-warning">⚠️ 在庫残りわずか</div>' : ""}
         </div>
         <div class="actions">
           <div class="stepper"><button class="secondary" data-step="-1" data-id="${x.id}" aria-label="1個減らす" ${Number(x.quantity ?? 0) <= 0 ? "disabled" : ""}>−</button><strong>${Number(x.quantity ?? 0)}</strong><button class="primary" data-step="1" data-id="${x.id}" aria-label="1個増やす">＋</button></div>
