@@ -1,31 +1,315 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>在庫管理</title><style>
-:root{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;color:#202b3b;background:#f3f5f9}*{box-sizing:border-box}body{margin:0}header{background:#fff;padding:20px 16px;box-shadow:0 1px 5px #d8deeb}h1{margin:0;font-size:23px}main{max-width:780px;margin:auto;padding:16px}.panel{background:white;border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:0 2px 10px #e4e8f0}h2{font-size:18px;margin:0 0 14px}input,select,button{font:inherit}input,select{width:100%;padding:12px;border:1px solid #cdd5e1;border-radius:10px;margin:6px 0 12px;background:#fff}button{border:0;border-radius:10px;padding:11px 14px;background:#285bd7;color:white;font-weight:600;cursor:pointer}button:disabled{opacity:.5}.secondary{background:#e9edf6;color:#28364d}.danger{background:#d83c4b}.small{padding:7px 10px;font-size:13px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row>*{flex:1}.item{border-top:1px solid #edf0f4;padding:13px 0}.item:first-child{border-top:0}.item b{font-size:17px}.muted{color:#68768b;font-size:13px}.count{font-size:20px;font-weight:700}.hidden{display:none!important}.error{color:#bf2637}.success{color:#18784a}#status{font-size:13px;margin:8px 0}.right{margin-left:auto}label{font-size:14px;font-weight:600}.badge{background:#fff1db;color:#9c5d00;border-radius:7px;padding:3px 6px;font-size:12px}dialog{border:0;border-radius:16px;padding:20px;width:min(92vw,480px);box-shadow:0 8px 50px #0004}dialog::backdrop{background:#0007}.toolbar{display:flex;gap:8px;align-items:center}.toolbar input{margin:0}.toolbar button{white-space:nowrap}</style></head><body>
-<header><div class="row"><h1>📦 在庫管理</h1><button id="logout" class="secondary small right hidden">ログアウト</button></div></header><main>
-<section id="loginPanel" class="panel"><h2>スタッフ共通ログイン</h2><p class="muted">管理者が設定した共通パスワードを入力してください。</p><form id="loginForm"><label>共通パスワード</label><input id="password" type="password" autocomplete="current-password" required><button type="submit">ログイン</button></form><p id="loginError" class="error"></p></section>
-<div id="appPanel" class="hidden"><div id="status" role="status"></div><section class="panel"><div class="toolbar"><input id="search" placeholder="在庫を検索"><button id="addItem">＋ 在庫追加</button></div><p class="muted" id="summary"></p><div id="items"></div></section><section class="panel"><h2>👥 スタッフ管理</h2><form id="staffForm" class="row"><input id="staffName" placeholder="スタッフ名を入力" maxlength="60" required><button type="submit">追加</button></form><div id="staff"></div><p class="muted">スタッフ名の登録は管理用です。ログインは全員同じパスワードを使います。</p></section></div>
-</main><dialog id="editor"><form id="itemForm"><h2 id="editorTitle">在庫追加</h2><label>商品名</label><input id="itemName" maxlength="100" required><label>カテゴリー（任意）</label><input id="category" maxlength="60"><label>在庫数</label><input id="quantity" type="number" min="0" max="9999999" step="1" required><label>最低在庫数（任意）</label><input id="minimum" type="number" min="0" max="9999999" step="1" value="0"><label>メモ（任意）</label><input id="memo" maxlength="300"><div class="row"><button type="button" class="secondary" id="cancelEdit">キャンセル</button><button type="submit">保存</button></div></form></dialog>
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>在庫管理</title>
+  <style>
+    :root{
+      --bg:#f3f4f6; --card:#fff; --text:#111827; --sub:#6b7280;
+      --line:#e5e7eb; --primary:#2563eb; --danger:#dc2626; --ok:#059669;
+      --shadow:0 8px 24px rgba(0,0,0,.06);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      background:var(--bg); color:var(--text);
+    }
+    header{
+      position:sticky; top:0; z-index:10; background:#fff; border-bottom:1px solid var(--line);
+      padding:16px 18px; display:flex; align-items:center; justify-content:space-between;
+    }
+    h1{font-size:22px;margin:0}
+    .wrap{max-width:780px;margin:0 auto;padding:18px}
+    .card{
+      background:var(--card); border:1px solid var(--line); border-radius:18px;
+      padding:18px; box-shadow:var(--shadow); margin-bottom:16px;
+    }
+    .hidden{display:none!important}
+    label{display:block;font-weight:700;margin:12px 0 6px}
+    input{
+      width:100%; padding:14px 15px; border:1px solid #cbd5e1; border-radius:12px;
+      font-size:16px; background:#fff;
+    }
+    button{
+      border:0; border-radius:12px; padding:12px 16px; font-size:16px; font-weight:700;
+      cursor:pointer;
+    }
+    .primary{background:var(--primary);color:white}
+    .secondary{background:#e5e7eb;color:#111827}
+    .danger{background:#fee2e2;color:#991b1b}
+    .small{padding:9px 12px;font-size:14px}
+    .row{display:flex;gap:10px;align-items:center}
+    .grow{flex:1}
+    .muted{color:var(--sub);font-size:14px}
+    .status{margin-top:10px;font-size:14px}
+    .status.bad{color:var(--danger)}
+    .status.ok{color:var(--ok)}
+    .toolbar{display:flex;gap:10px;margin-bottom:14px}
+    .toolbar input{margin:0}
+    .item{
+      display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center;
+      padding:14px 0; border-bottom:1px solid var(--line);
+    }
+    .item:last-child{border-bottom:0}
+    .name{font-weight:800;font-size:17px}
+    .qty{font-size:14px;color:var(--sub);margin-top:4px}
+    .actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .empty{text-align:center;color:var(--sub);padding:28px 8px}
+    dialog{
+      width:min(92vw,520px); border:0; border-radius:18px; padding:0; box-shadow:0 24px 60px rgba(0,0,0,.2)
+    }
+    dialog::backdrop{background:rgba(0,0,0,.35)}
+    .dialog-inner{padding:20px}
+    .top-actions{display:flex;gap:8px;align-items:center}
+    .badge{
+      display:inline-block;background:#eef2ff;color:#3730a3;border-radius:999px;
+      padding:4px 8px;font-size:12px;font-weight:700;margin-left:6px;
+    }
+    @media(max-width:560px){
+      .wrap{padding:14px}
+      .item{grid-template-columns:1fr}
+      .actions{justify-content:flex-start}
+      header{padding:14px}
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>📦 在庫管理</h1>
+  <div class="top-actions">
+    <span id="onlineBadge" class="badge hidden">接続中</span>
+    <button id="logoutBtn" class="secondary small hidden">ログアウト</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="loginPanel" class="card">
+    <h2 style="margin-top:0">スタッフ共通ログイン</h2>
+    <p class="muted">共通パスワードだけ入力してください。</p>
+    <form id="loginForm">
+      <label for="password">共通パスワード</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <div style="margin-top:14px">
+        <button class="primary" type="submit">ログイン</button>
+      </div>
+    </form>
+    <div id="loginStatus" class="status"></div>
+  </section>
+
+  <section id="appPanel" class="hidden">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div>
+          <h2 style="margin:0 0 4px">在庫一覧</h2>
+          <div class="muted">追加・変更・削除は全員に反映されます。</div>
+        </div>
+        <button id="addBtn" class="primary small">＋ 追加</button>
+      </div>
+
+      <div class="toolbar" style="margin-top:16px">
+        <input id="search" class="grow" placeholder="商品名で検索">
+      </div>
+
+      <div id="items"></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="editor">
+  <div class="dialog-inner">
+    <h2 id="editorTitle" style="margin-top:0">商品を追加</h2>
+    <form id="itemForm">
+      <input id="editId" type="hidden">
+      <label for="itemName">商品名</label>
+      <input id="itemName" required maxlength="80">
+
+      <label for="itemQty">在庫数</label>
+      <input id="itemQty" type="number" min="0" step="1" required>
+
+      <div class="row" style="margin-top:18px;justify-content:flex-end">
+        <button id="cancelEdit" class="secondary" type="button">キャンセル</button>
+        <button class="primary" type="submit">保存</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
 <script type="module">
-import{initializeApp}from'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
-import{getAuth,signInWithEmailAndPassword,onAuthStateChanged,signOut}from'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
-import{getFirestore,collection,onSnapshot,addDoc,updateDoc,deleteDoc,doc,serverTimestamp}from'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
-const firebaseConfig={apiKey:'AIzaSyDrIO42RKi0oyjkXO-z3uH7eJcuLR8_Ils',authDomain:'zaiko-c706e.firebaseapp.com',projectId:'zaiko-c706e',storageBucket:'zaiko-c706e.firebasestorage.app',messagingSenderId:'282569206342',appId:'1:282569206342:web:bc58b45703daa7a76cb847',measurementId:'G-BMPL6LVV1W'};
-// Firebase Authenticationでこのメールアドレスのユーザーを1件作成してください。
-// メールはログイン画面に表示されず、スタッフはパスワードだけを入力します。
-const SHARED_LOGIN_EMAIL='staff@zaiko.example';
-const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app);
-const $=id=>document.getElementById(id);let inventory=[],staff=[],editing=null,unsubs=[];
-const message=(s,bad=false)=>{$('status').textContent=s;$('status').className=bad?'error':'success'};
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-$('loginForm').onsubmit=async e=>{e.preventDefault();$('loginError').textContent='';try{await signInWithEmailAndPassword(auth,SHARED_LOGIN_EMAIL,$('password').value);$('password').value=''}catch(err){$('loginError').textContent='ログインできません。パスワードまたはFirebaseの認証設定を確認してください。'}};
-$('logout').onclick=()=>signOut(auth);
-onAuthStateChanged(auth,user=>{unsubs.forEach(f=>f());unsubs=[];$('loginPanel').classList.toggle('hidden',!!user);$('appPanel').classList.toggle('hidden',!user);$('logout').classList.toggle('hidden',!user);if(!user)return;unsubs.push(onSnapshot(collection(db,'inventory'),s=>{inventory=s.docs.map(d=>({id:d.id,...d.data()}));renderItems();message('最新の在庫と同期中')},e=>message('在庫を読み込めません。Firestoreの設定とルールを確認してください。',true)));unsubs.push(onSnapshot(collection(db,'staff'),s=>{staff=s.docs.map(d=>({id:d.id,...d.data()}));renderStaff()},e=>message('スタッフ一覧を読み込めません。',true)))});
-function renderItems(){const q=$('search').value.toLowerCase();const filtered=inventory.filter(x=>[x.name,x.category,x.memo].some(v=>String(v??'').toLowerCase().includes(q))).sort((a,b)=>String(a.name).localeCompare(String(b.name),'ja'));$('summary').textContent=`登録商品 ${inventory.length}件 / 表示 ${filtered.length}件`;$('items').innerHTML=filtered.length?filtered.map(x=>`<div class="item"><div class="row"><div><b>${esc(x.name)}</b> ${Number(x.quantity)<=Number(x.minimum||0)?'<span class="badge">在庫少</span>':''}<div class="muted">${esc(x.category||'カテゴリーなし')} ${x.memo?'・'+esc(x.memo):''}</div></div><div class="count">${Number(x.quantity)||0}</div></div><div class="row" style="margin-top:9px"><button class="secondary small" data-act="minus" data-id="${x.id}">−1</button><button class="secondary small" data-act="plus" data-id="${x.id}">＋1</button><button class="secondary small" data-act="edit" data-id="${x.id}">編集</button><button class="danger small" data-act="delete" data-id="${x.id}">削除</button></div></div>`).join(''):'<p class="muted">該当する在庫はありません。</p>'}
-$('search').oninput=renderItems;
-$('items').onclick=async e=>{const b=e.target.closest('button[data-act]');if(!b)return;const x=inventory.find(v=>v.id===b.dataset.id);if(!x)return;try{if(b.dataset.act==='edit')return openEditor(x);if(b.dataset.act==='delete'){if(confirm(`「${x.name}」を削除しますか？`))await deleteDoc(doc(db,'inventory',x.id));return}const delta=b.dataset.act==='plus'?1:-1;const {increment,runTransaction}=await import('https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js');await runTransaction(db,async t=>{const ref=doc(db,'inventory',x.id),snap=await t.get(ref);if(!snap.exists())throw Error('商品が見つかりません');const n=Number(snap.data().quantity||0)+delta;if(n<0)throw Error('在庫数は0未満にできません');t.update(ref,{quantity:n,updatedAt:serverTimestamp()})})}catch(err){alert(err.message||'更新に失敗しました')}};
-function openEditor(x=null){editing=x?.id||null;$('editorTitle').textContent=x?'在庫編集':'在庫追加';$('itemName').value=x?.name||'';$('category').value=x?.category||'';$('quantity').value=x?.quantity??0;$('minimum').value=x?.minimum??0;$('memo').value=x?.memo||'';$('editor').showModal()}
-$('addItem').onclick=()=>openEditor();$('cancelEdit').onclick=()=>$('editor').close();
-$('itemForm').onsubmit=async e=>{e.preventDefault();const data={name:$('itemName').value.trim(),category:$('category').value.trim(),quantity:Number($('quantity').value),minimum:Number($('minimum').value||0),memo:$('memo').value.trim(),updatedAt:serverTimestamp()};if(!data.name||![data.quantity,data.minimum].every(n=>Number.isSafeInteger(n)&&n>=0)){alert('商品名と在庫数を確認してください');return}try{if(editing)await updateDoc(doc(db,'inventory',editing),data);else await addDoc(collection(db,'inventory'),{...data,createdAt:serverTimestamp()});$('editor').close()}catch(err){alert('保存に失敗しました。Firebaseの設定を確認してください。')}};
-function renderStaff(){$('staff').innerHTML=staff.sort((a,b)=>String(a.name).localeCompare(String(b.name),'ja')).map(x=>`<div class="item row"><span>${esc(x.name)}</span><button class="danger small" data-staff="${x.id}">削除</button></div>`).join('')||'<p class="muted">スタッフ未登録</p>'}
-$('staffForm').onsubmit=async e=>{e.preventDefault();const name=$('staffName').value.trim();if(!name)return;try{await addDoc(collection(db,'staff'),{name,createdAt:serverTimestamp()});$('staffName').value=''}catch(err){alert('スタッフを追加できませんでした')}};
-$('staff').onclick=async e=>{const id=e.target.closest('[data-staff]')?.dataset.staff;if(!id)return;const x=staff.find(v=>v.id===id);if(x&&confirm(`${x.name}をスタッフ一覧から削除しますか？\n※共通パスワードでのログイン権限は削除されません。`))try{await deleteDoc(doc(db,'staff',id))}catch(err){alert('削除できませんでした')}};
-</script></body></html>
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
+  import {
+    getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut
+  } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-auth.js";
+  import {
+    getFirestore, collection, addDoc, updateDoc, deleteDoc, doc,
+    onSnapshot, serverTimestamp, query, orderBy
+  } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDrIO42RKi0oyjkXO-z3uH7eJcuLR8_Ils",
+    authDomain: "zaiko-c706e.firebaseapp.com",
+    projectId: "zaiko-c706e",
+    storageBucket: "zaiko-c706e.firebasestorage.app",
+    messagingSenderId: "282569206342",
+    appId: "1:282569206342:web:bc58b45703daa7a76cb847",
+    measurementId: "G-BMPL6LVV1W"
+  };
+
+  // Firebase Authentication に作成済みのスタッフ用ユーザー
+  const SHARED_LOGIN_EMAIL = "kurousagiseira+staff@gmail.com";
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  const $ = (id) => document.getElementById(id);
+  let inventory = [];
+  let unsubscribe = null;
+
+  function setLoginStatus(text, bad=false){
+    $("loginStatus").textContent = text;
+    $("loginStatus").className = "status " + (bad ? "bad" : "ok");
+  }
+
+  $("loginForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const password = $("password").value;
+    setLoginStatus("ログイン中...");
+    try{
+      await signInWithEmailAndPassword(auth, SHARED_LOGIN_EMAIL, password);
+      $("password").value = "";
+      setLoginStatus("");
+    }catch(err){
+      console.error(err);
+      setLoginStatus("ログインできません。共通パスワードを確認してください。", true);
+    }
+  });
+
+  $("logoutBtn").addEventListener("click", () => signOut(auth));
+
+  onAuthStateChanged(auth, (user) => {
+    if(user){
+      $("loginPanel").classList.add("hidden");
+      $("appPanel").classList.remove("hidden");
+      $("logoutBtn").classList.remove("hidden");
+      $("onlineBadge").classList.remove("hidden");
+      startInventorySync();
+    }else{
+      $("loginPanel").classList.remove("hidden");
+      $("appPanel").classList.add("hidden");
+      $("logoutBtn").classList.add("hidden");
+      $("onlineBadge").classList.add("hidden");
+      if(unsubscribe){ unsubscribe(); unsubscribe = null; }
+      inventory = [];
+      renderItems();
+    }
+  });
+
+  function startInventorySync(){
+    if(unsubscribe) unsubscribe();
+    const q = query(collection(db,"inventory"), orderBy("name"));
+    unsubscribe = onSnapshot(q, (snap) => {
+      inventory = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      renderItems();
+    }, (err) => {
+      console.error(err);
+      $("items").innerHTML = '<div class="empty">在庫データを読み込めませんでした。Firestoreのルールを確認してください。</div>';
+    });
+  }
+
+  function renderItems(){
+    const term = $("search").value.trim().toLowerCase();
+    const list = inventory.filter(x => String(x.name || "").toLowerCase().includes(term));
+    if(!list.length){
+      $("items").innerHTML = '<div class="empty">商品がありません。</div>';
+      return;
+    }
+
+    $("items").innerHTML = list.map(x => `
+      <div class="item">
+        <div>
+          <div class="name">${escapeHtml(x.name)}</div>
+          <div class="qty">在庫：${Number(x.quantity ?? 0)} 個</div>
+        </div>
+        <div class="actions">
+          <button class="secondary small" data-edit="${x.id}">編集</button>
+          <button class="danger small" data-delete="${x.id}">削除</button>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  $("search").addEventListener("input", renderItems);
+
+  $("items").addEventListener("click", async (e) => {
+    const editId = e.target.dataset.edit;
+    const deleteId = e.target.dataset.delete;
+
+    if(editId){
+      const item = inventory.find(x => x.id === editId);
+      if(!item) return;
+      $("editorTitle").textContent = "商品を編集";
+      $("editId").value = item.id;
+      $("itemName").value = item.name ?? "";
+      $("itemQty").value = Number(item.quantity ?? 0);
+      $("editor").showModal();
+    }
+
+    if(deleteId){
+      const item = inventory.find(x => x.id === deleteId);
+      if(!item) return;
+      if(confirm(`「${item.name}」を削除しますか？`)){
+        await deleteDoc(doc(db,"inventory",deleteId));
+      }
+    }
+  });
+
+  $("addBtn").addEventListener("click", () => {
+    $("editorTitle").textContent = "商品を追加";
+    $("editId").value = "";
+    $("itemName").value = "";
+    $("itemQty").value = 0;
+    $("editor").showModal();
+  });
+
+  $("cancelEdit").addEventListener("click", () => $("editor").close());
+
+  $("itemForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const id = $("editId").value;
+    const name = $("itemName").value.trim();
+    const quantity = Number($("itemQty").value);
+
+    if(!name) return;
+    if(!Number.isInteger(quantity) || quantity < 0){
+      alert("在庫数は0以上の整数にしてください。");
+      return;
+    }
+
+    if(id){
+      await updateDoc(doc(db,"inventory",id), {
+        name, quantity, updatedAt: serverTimestamp()
+      });
+    }else{
+      await addDoc(collection(db,"inventory"), {
+        name, quantity,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    }
+
+    $("editor").close();
+  });
+
+  function escapeHtml(v){
+    return String(v ?? "")
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#039;");
+  }
+</script>
+</body>
+</html>
