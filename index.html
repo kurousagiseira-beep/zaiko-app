@@ -110,7 +110,7 @@
           <h2 style="margin:0 0 4px">在庫一覧</h2>
           <div class="muted">追加・変更・削除は全員に反映されます。</div>
         </div>
-        <div class="row" style="flex-wrap:wrap;justify-content:flex-end"><button id="importMenuBtn" class="secondary small">メニュー商品を一括登録</button><button id="addBtn" class="primary small">＋ 追加</button></div>
+        <div class="row" style="flex-wrap:wrap;justify-content:flex-end"><button id="applyMinBtn" class="secondary small">最低在庫数を一括設定</button><button id="importMenuBtn" class="secondary small">メニュー商品を一括登録</button><button id="addBtn" class="primary small">＋ 追加</button></div>
       </div>
 
       <div class="toolbar" style="margin-top:16px">
@@ -293,6 +293,25 @@
         await deleteDoc(doc(db,"inventory",deleteId));
       }
     }
+  });
+
+  const caseMinimums = {"花山":12,"アサヒ瓶ビール":30,"スラット":24,"レモンサワー":24,"ハイボール":24,"壱岐":6,"JAPAN":6,"鍛高譚":6,"梅酒":6,"柚子小町":6,"オレンジジュース":6,"アップルジュース":6,"パイナップルジュース":6,"緑茶":12,"烏龍茶":12,"コーラ":24,"炭酸水":24};
+  $("applyMinBtn").addEventListener("click", async () => {
+    if(!confirm("指定された17商品の最低在庫数を一括設定します。レッドブルは本数確認後に設定します。現在庫数は変更しません。よろしいですか？")) return;
+    const button=$("applyMinBtn");button.disabled=true;
+    try{
+      const snapshot=await getDocs(collection(db,"inventory"));
+      const batch=writeBatch(db);let count=0;
+      for(const item of snapshot.docs){
+        const name=String(item.data().name||"").trim().normalize("NFKC");
+        if(Object.prototype.hasOwnProperty.call(caseMinimums,name)){
+          batch.update(item.ref,{minQuantity:caseMinimums[name],updatedAt:serverTimestamp()});count++;
+        }
+      }
+      if(count){await batch.commit();alert(count+"商品に最低在庫数を設定しました。レッドブルは本数確認待ちです。");}
+      else alert("対象商品がまだ登録されていません。先にメニュー商品を登録してください。");
+    }catch(err){console.error(err);alert("最低在庫数の一括設定に失敗しました。");}
+    finally{button.disabled=false;}
   });
 
   const menuProductNames = ["オレンジジュース","アップルジュース","パイナップルジュース","マンゴージュース","ストレートティー","ミルクティー","レモンティー","ジャスミンティー","コーラ","レッドブル","モンスター（緑）","モンスター（青）","カルピス","炭酸水","緑茶","烏龍茶","ミネラルウォーター","アサヒ瓶ビール","スラット","レモンサワー","ハイボール","花山","壱岐","JAPAN","鍛高譚","梅酒","柚子小町","吉四六","シンデレラ"];
