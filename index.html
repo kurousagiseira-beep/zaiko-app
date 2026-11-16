@@ -110,7 +110,7 @@
           <h2 style="margin:0 0 4px">在庫一覧</h2>
           <div class="muted">追加・変更・削除は全員に反映されます。</div>
         </div>
-        <div class="row" style="flex-wrap:wrap;justify-content:flex-end"><button id="applyMinBtn" class="secondary small">最低在庫数を一括設定</button><button id="importMenuBtn" class="secondary small">メニュー商品を一括登録</button><button id="addBtn" class="primary small">＋ 追加</button></div>
+        <div class="row" style="flex-wrap:wrap;justify-content:flex-end"><button id="applyMinBtn" class="secondary small">最低在庫数を一括設定</button><button id="applyMinBtn" class="secondary small">指定の最低本数を反映</button><button id="importMenuBtn" class="secondary small">メニュー商品を一括登録</button><button id="addBtn" class="primary small">＋ 追加</button></div>
       </div>
 
       <div class="toolbar" style="margin-top:16px">
@@ -310,6 +310,33 @@
       }
       if(count){await batch.commit();alert(count+"商品に最低在庫数を設定しました。レッドブルは本数確認待ちです。");}
       else alert("対象商品がまだ登録されていません。先にメニュー商品を登録してください。");
+    }catch(err){console.error(err);alert("最低在庫数の一括設定に失敗しました。");}
+    finally{button.disabled=false;}
+  });
+
+  const configuredMinimums = {"花山":12,"アサヒ瓶ビール":30,"スラット":24,"レモンサワー":24,"ハイボール":24,"壱岐":6,"JAPAN":6,"鍛高譚":6,"梅酒":6,"柚子小町":6,"オレンジジュース":6,"アップルジュース":6,"パイナップルジュース":6,"緑茶":12,"烏龍茶":12,"コーラ":24,"レッドブル":6,"炭酸水":24};
+  $("applyMinBtn").addEventListener("click", async () => {
+    const button=$("applyMinBtn");
+    if(!confirm("指定された18商品の最低在庫数を一括設定します。現在庫数は変更しません。よろしいですか？"))return;
+    button.disabled=true;
+    try{
+      const snapshot=await getDocs(collection(db,"inventory"));
+      const batch=writeBatch(db);
+      let count=0;
+      const found=new Set();
+      for(const item of snapshot.docs){
+        const name=String(item.data().name||"").trim();
+        const key=name==="瓶ビール"?"アサヒ瓶ビール":name;
+        if(Object.prototype.hasOwnProperty.call(configuredMinimums,key)){
+          found.add(key);
+          if(Number(item.data().minQuantity??3)!==configuredMinimums[key]){
+            batch.update(item.ref,{minQuantity:configuredMinimums[key],updatedAt:serverTimestamp()});count++;
+          }
+        }
+      }
+      if(count)await batch.commit();
+      const missing=Object.keys(configuredMinimums).filter(n=>!found.has(n));
+      alert("最低在庫数を設定しました。変更："+count+"商品。"+(missing.length?"未登録："+missing.join("、"):"全18商品を確認済み。"));
     }catch(err){console.error(err);alert("最低在庫数の一括設定に失敗しました。");}
     finally{button.disabled=false;}
   });
