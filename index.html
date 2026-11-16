@@ -236,7 +236,7 @@
     }
 
     $("items").innerHTML = list.map(x => `
-      <div class="item ${Number(x.quantity ?? 0) === 0 || Number(x.quantity ?? 0) <= Number(x.minQuantity ?? 3) ? "low-stock" : ""}">
+      <div class="item ${Number(x.quantity ?? 0) === 0 || Number(x.quantity ?? 0) <= Number(minimumForName(x.name) ?? x.minQuantity ?? 3) ? "low-stock" : ""}">
         <div>
           <div class="name">${escapeHtml(x.name)}</div>
           <div class="qty">最低在庫数：${Number(x.minQuantity ?? 3)}本</div>
@@ -283,7 +283,7 @@
       $("editId").value = item.id;
       $("itemName").value = item.name ?? "";
       $("itemQty").value = Number(item.quantity ?? 0);
-      $("itemMinQty").value = Number(item.minQuantity ?? 3);
+      $("itemMinQty").value = Number(minimumForName(item.name) ?? item.minQuantity ?? 3);
       $("editor").showModal();
     }
 
@@ -298,9 +298,9 @@
 
   const caseMinimums = {"花山":12,"アサヒ瓶ビール":30,"スラット":24,"レモンサワー":24,"ハイボール":24,"壱岐":6,"JAPAN":6,"鍛高譚":6,"梅酒":6,"柚子小町":6,"オレンジジュース":6,"アップルジュース":6,"パイナップルジュース":6,"緑茶":12,"烏龍茶":12,"コーラ":24,"炭酸水":24};
   function minimumForName(name){
-    const normalized=String(name||"").normalize("NFKC").replace(/[\\s　・･()（）_-]/g,"").toLowerCase();
+    const normalized=String(name||"").normalize("NFKC").replace(/[\s　・･()（）_-]/g,"").toLowerCase();
     for(const [product,min] of Object.entries(configuredMinimums)){
-      const key=product.normalize("NFKC").replace(/[\\s　・･()（）_-]/g,"").toLowerCase();
+      const key=product.normalize("NFKC").replace(/[\s　・･()（）_-]/g,"").toLowerCase();
       if(normalized===key || (key==="アサヒ瓶ビール" && (normalized==="瓶ビール" || normalized==="アサヒ小瓶" || normalized==="アサヒ瓶ビール小瓶")))return min;
     }
     return null;
