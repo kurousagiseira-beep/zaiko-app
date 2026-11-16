@@ -203,6 +203,7 @@
       $("logoutBtn").classList.remove("hidden");
       $("onlineBadge").classList.remove("hidden");
       startInventorySync();
+      applyMinimums(false);
     }else{
       $("loginPanel").classList.remove("hidden");
       $("appPanel").classList.add("hidden");
@@ -296,50 +297,33 @@
   });
 
   const caseMinimums = {"花山":12,"アサヒ瓶ビール":30,"スラット":24,"レモンサワー":24,"ハイボール":24,"壱岐":6,"JAPAN":6,"鍛高譚":6,"梅酒":6,"柚子小町":6,"オレンジジュース":6,"アップルジュース":6,"パイナップルジュース":6,"緑茶":12,"烏龍茶":12,"コーラ":24,"炭酸水":24};
-  $("applyMinBtn").addEventListener("click", async () => {
-    if(!confirm("指定された17商品の最低在庫数を一括設定します。レッドブルは本数確認後に設定します。現在庫数は変更しません。よろしいですか？")) return;
+  function minimumForName(name){
+    const normalized=String(name||"").normalize("NFKC").replace(/[\\s　・･()（）_-]/g,"").toLowerCase();
+    for(const [product,min] of Object.entries(configuredMinimums)){
+      const key=product.normalize("NFKC").replace(/[\\s　・･()（）_-]/g,"").toLowerCase();
+      if(normalized===key || (key==="アサヒ瓶ビール" && (normalized==="瓶ビール" || normalized==="アサヒ小瓶" || normalized==="アサヒ瓶ビール小瓶")))return min;
+    }
+    return null;
+  }
+  async function applyMinimums(showMessage=true){
     const button=$("applyMinBtn");button.disabled=true;
     try{
       const snapshot=await getDocs(collection(db,"inventory"));
-      const batch=writeBatch(db);let count=0;
+      const batch=writeBatch(db);let changed=0,matched=0;
       for(const item of snapshot.docs){
-        const name=String(item.data().name||"").trim().normalize("NFKC");
-        if(Object.prototype.hasOwnProperty.call(caseMinimums,name)){
-          batch.update(item.ref,{minQuantity:caseMinimums[name],updatedAt:serverTimestamp()});count++;
+        const min=minimumForName(item.data().name);
+        if(min===null)continue;
+        matched++;
+        if(Number(item.data().minQuantity??3)!==min){
+          batch.update(item.ref,{minQuantity:min,updatedAt:serverTimestamp()});changed++;
         }
       }
-      if(count){await batch.commit();alert(count+"商品に最低在庫数を設定しました。レッドブルは本数確認待ちです。");}
-      else alert("対象商品がまだ登録されていません。先にメニュー商品を登録してください。");
-    }catch(err){console.error(err);alert("最低在庫数の一括設定に失敗しました。");}
+      if(changed)await batch.commit();
+      if(showMessage)alert("対象："+matched+"商品／更新："+changed+"商品。"+(matched===0?"商品名が一致しません。商品名を確認してください。":"最低在庫数の表示を確認してください。"));
+    }catch(err){console.error(err);if(showMessage)alert("更新に失敗しました："+(err.code||err.message||"不明なエラー"));}
     finally{button.disabled=false;}
-  });
-
-  const configuredMinimums = {"花山":12,"アサヒ瓶ビール":30,"スラット":24,"レモンサワー":24,"ハイボール":24,"壱岐":6,"JAPAN":6,"鍛高譚":6,"梅酒":6,"柚子小町":6,"オレンジジュース":6,"アップルジュース":6,"パイナップルジュース":6,"緑茶":12,"烏龍茶":12,"コーラ":24,"レッドブル":6,"炭酸水":24};
-  $("applyMinBtn").addEventListener("click", async () => {
-    const button=$("applyMinBtn");
-    if(!confirm("指定された18商品の最低在庫数を一括設定します。現在庫数は変更しません。よろしいですか？"))return;
-    button.disabled=true;
-    try{
-      const snapshot=await getDocs(collection(db,"inventory"));
-      const batch=writeBatch(db);
-      let count=0;
-      const found=new Set();
-      for(const item of snapshot.docs){
-        const name=String(item.data().name||"").trim();
-        const key=name==="瓶ビール"?"アサヒ瓶ビール":name;
-        if(Object.prototype.hasOwnProperty.call(configuredMinimums,key)){
-          found.add(key);
-          if(Number(item.data().minQuantity??3)!==configuredMinimums[key]){
-            batch.update(item.ref,{minQuantity:configuredMinimums[key],updatedAt:serverTimestamp()});count++;
-          }
-        }
-      }
-      if(count)await batch.commit();
-      const missing=Object.keys(configuredMinimums).filter(n=>!found.has(n));
-      alert("最低在庫数を設定しました。変更："+count+"商品。"+(missing.length?"未登録："+missing.join("、"):"全18商品を確認済み。"));
-    }catch(err){console.error(err);alert("最低在庫数の一括設定に失敗しました。");}
-    finally{button.disabled=false;}
-  });
+  }
+  $("applyMinBtn").addEventListener("click",()=>applyMinimums(true));
 
   const menuProductNames = ["オレンジジュース","アップルジュース","パイナップルジュース","マンゴージュース","ストレートティー","ミルクティー","レモンティー","ジャスミンティー","コーラ","レッドブル","モンスター（緑）","モンスター（青）","カルピス","炭酸水","緑茶","烏龍茶","ミネラルウォーター","アサヒ瓶ビール","スラット","レモンサワー","ハイボール","花山","壱岐","JAPAN","鍛高譚","梅酒","柚子小町","吉四六","シンデレラ"];
   $("importMenuBtn").addEventListener("click", async () => {
