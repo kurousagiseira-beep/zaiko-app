@@ -117,6 +117,7 @@
         <input id="search" class="grow" placeholder="商品名で検索">
       </div>
 
+      <div class="row" style="justify-content:space-between;flex-wrap:wrap;margin-bottom:12px"><button id="orderFilterBtn" class="secondary small" type="button" aria-pressed="false">📋 発注リストを表示</button><span id="orderCount" class="muted"></span></div>
       <div id="items"></div>
     </div>
   </section>
@@ -173,6 +174,7 @@
 
   const $ = (id) => document.getElementById(id);
   let inventory = [];
+  let showOrderOnly = false;
   let unsubscribe = null;
 
   function setLoginStatus(text, bad=false){
@@ -229,9 +231,14 @@
 
   function renderItems(){
     const term = $("search").value.trim().toLowerCase();
-    const list = inventory.filter(x => String(x.name || "").toLowerCase().includes(term));
+    const needsOrder = x => Number(x.quantity ?? 0) <= Number(minimumForName(x.name) ?? x.minQuantity ?? 3);
+    const orderCount = inventory.filter(needsOrder).length;
+    $("orderCount").textContent = "発注対象："+orderCount+"商品";
+    $("orderFilterBtn").textContent = showOrderOnly ? "📦 全商品を表示" : "📋 発注リストを表示";
+    $("orderFilterBtn").setAttribute("aria-pressed",String(showOrderOnly));
+    const list = inventory.filter(x => (!showOrderOnly || needsOrder(x)) && String(x.name || "").toLowerCase().includes(term));
     if(!list.length){
-      $("items").innerHTML = '<div class="empty">商品がありません。</div>';
+      $("items").innerHTML = `<div class="empty">${showOrderOnly ? "発注対象の商品はありません。" : "商品がありません。"}</div>`;
       return;
     }
 
@@ -252,6 +259,7 @@
   }
 
   $("search").addEventListener("input", renderItems);
+  $("orderFilterBtn").addEventListener("click",()=>{showOrderOnly=!showOrderOnly;renderItems();});
 
   $("items").addEventListener("click", async (e) => {
     const step = e.target.dataset.step;
