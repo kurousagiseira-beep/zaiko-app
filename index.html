@@ -239,8 +239,8 @@
       <div class="item ${Number(x.quantity ?? 0) === 0 || Number(x.quantity ?? 0) <= Number(minimumForName(x.name) ?? x.minQuantity ?? 3) ? "low-stock" : ""}">
         <div>
           <div class="name">${escapeHtml(x.name)}</div>
-          <div class="qty">最低在庫数：${Number(x.minQuantity ?? 3)}本</div>
-          ${Number(x.quantity ?? 0) === 0 ? '<div class="stock-warning">⚠️ 在庫切れ</div>' : Number(x.quantity ?? 0) <= Number(x.minQuantity ?? 3) ? '<div class="stock-warning">⚠️ 最低在庫数以下</div>' : ""}
+          <div class="qty">最低在庫数：${Number(minimumForName(x.name) ?? x.minQuantity ?? 3)}本</div>
+          ${Number(x.quantity ?? 0) === 0 ? '<div class="stock-warning">⚠️ 在庫切れ</div>' : Number(x.quantity ?? 0) <= Number(minimumForName(x.name) ?? x.minQuantity ?? 3) ? '<div class="stock-warning">⚠️ 最低在庫数以下</div>' : ""}
         </div>
         <div class="actions">
           <div class="stepper"><button class="secondary" data-step="-1" data-id="${x.id}" aria-label="1個減らす" ${Number(x.quantity ?? 0) <= 0 ? "disabled" : ""}>−</button><strong>${Number(x.quantity ?? 0)}</strong><button class="primary" data-step="1" data-id="${x.id}" aria-label="1個増やす">＋</button></div>
