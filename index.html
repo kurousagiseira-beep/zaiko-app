@@ -110,7 +110,7 @@
           <h2 style="margin:0 0 4px">在庫一覧</h2>
           <div class="muted">追加・変更・削除は全員に反映されます。</div>
         </div>
-        <div class="row" style="flex-wrap:wrap;justify-content:flex-end"><button id="applyMinBtn" class="secondary small">指定の最低本数を反映</button><button id="importMenuBtn" class="secondary small">メニュー商品を一括登録</button><button id="addBtn" class="primary small">＋ 追加</button></div>
+        <div class="row" style="flex-wrap:wrap;justify-content:flex-end"><button id="stocktakeBtn" class="secondary small">実在庫40商品を反映</button><button id="applyMinBtn" class="secondary small">指定の最低本数を反映</button><button id="importMenuBtn" class="secondary small">メニュー商品を一括登録</button><button id="addBtn" class="primary small">＋ 追加</button></div>
       </div>
 
       <div class="toolbar" style="margin-top:16px">
@@ -324,6 +324,33 @@
     finally{button.disabled=false;}
   }
   $("applyMinBtn").addEventListener("click",()=>applyMinimums(true));
+
+  const stocktakeRows=[["炭酸水",24],["コーラ",43],["アサヒ瓶ビール",37],["テキーラクエルボ",1],["柚子小町",3],["鍛高譚",11],["コカレロ",6],["JAPAN",3],["午後の紅茶ストレートティー",13],["午後の紅茶レモンティー",12],["午後の紅茶ミルクティー",9],["野菜ジュース",4],["パイナップルジュース",35],["アップルジュース",15],["オレンジジュース",4],["午後の紅茶無糖",6],["ブラックコーヒー",24],["緑茶",30],["烏龍茶",24],["赤ワイン",4],["ふんわり鏡月",3],["花山",28],["角ハイ",24],["スラットpeach",24],["スラットグレフル",48],["スラットアロエ",72],["スラットシャルドネ",24],["はなよい",24],["直球勝負",4],["ジャスミン茶",6],["壱岐",6],["茉莉花",12],["天然水",38],["天然水2L",6],["クライナーココナッツ",144],["クライナーパイン",24],["クライナーミント",48],["クライナーベリー",24],["ローザウォーター",5],["チョーヤ梅酒",40]];
+  const stocktakeAliases={"アサヒ瓶ビール":["瓶ビール","アサヒ瓶ビール"],"柚子小町":["ゆずこまち","柚子小町"],"鍛高譚":["たんたかたん","鍛高譚"],"JAPAN":["ジャパン","JAPAN"],"壱岐":["いき","壱岐"],"茉莉花":["まつりか","茉莉花"],"パイナップルジュース":["パインジュース","パイナップルジュース"],"アップルジュース":["アップル","アップルジュース"],"烏龍茶":["ウーロン茶","烏龍茶"],"天然水":["ミネラルウォーター","天然水"],"午後の紅茶ストレートティー":["午後の紅茶ストティー","午後の紅茶ストレートティー"],"角ハイ":["角ハイ","ハイボール"],"チョーヤ梅酒":["チョーヤ梅酒","梅酒"]};
+  function stockKey(name){return String(name||"").normalize("NFKC").replace(/[\\s　・･()（）_-]/g,"").toLowerCase();}
+  $("stocktakeBtn").addEventListener("click",async()=>{
+    if(!confirm("棚卸し40商品の現在庫を指定本数に上書きします（加算ではありません）。よろしいですか？"))return;
+    const button=$("stocktakeBtn");button.disabled=true;
+    try{
+      const snapshot=await getDocs(collection(db,"inventory"));
+      const batch=writeBatch(db);let updated=0,created=0;
+      for(const [name,quantity] of stocktakeRows){
+        const allowed=(stocktakeAliases[name]||[name]).map(stockKey);
+        const found=snapshot.docs.find(d=>allowed.includes(stockKey(d.data().name)));
+        const min=minimumForName(name);
+        if(found){
+          const fields={quantity,updatedAt:serverTimestamp()};
+          if(min!==null)fields.minQuantity=min;
+          batch.update(found.ref,fields);updated++;
+        }else{
+          batch.set(doc(collection(db,"inventory")),{name,quantity,minQuantity:min??3,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});created++;
+        }
+      }
+      await batch.commit();
+      alert("棚卸し反映完了：既存"+updated+"商品を更新、新規"+created+"商品を追加。合計40商品。");
+    }catch(err){console.error(err);alert("反映に失敗しました："+(err.code||err.message||"不明なエラー"));}
+    finally{button.disabled=false;}
+  });
 
   const menuProductNames = ["オレンジジュース","アップルジュース","パイナップルジュース","マンゴージュース","ストレートティー","ミルクティー","レモンティー","ジャスミンティー","コーラ","レッドブル","モンスター（緑）","モンスター（青）","カルピス","炭酸水","緑茶","烏龍茶","ミネラルウォーター","アサヒ瓶ビール","スラット","レモンサワー","ハイボール","花山","壱岐","JAPAN","鍛高譚","梅酒","柚子小町","吉四六","シンデレラ"];
   $("importMenuBtn").addEventListener("click", async () => {
