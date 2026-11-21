@@ -1,0 +1,7 @@
+name = "clubkiss-line-notify"
+main = "clubkiss-line-worker.js"
+compatibility_date = "2026-11-01"
+
+[[kv_namespaces]]
+binding = "KISS_DATA"
+id = "22cdfa8794bf42d5b1e76e85b9e3d49d"
