@@ -9,6 +9,11 @@ export default {async fetch(req,env){
 const url=new URL(req.url),path=url.pathname;
 if(path==='/')return new Response(page,{headers:{'content-type':'text/html;charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 if(path==='/session')return response({ok:await valid(req,env)});
+if(req.method==='OPTIONS'&&path==='/photo-confirm'){
+const origin=req.headers.get('origin')||'';
+if(origin!=='https://kurousagiseira-beep.github.io')return response({error:'Forbidden'},403);
+return new Response(null,{status:204,headers:{'access-control-allow-origin':origin,'access-control-allow-methods':'POST, OPTIONS','access-control-allow-headers':'Content-Type','vary':'Origin'}});
+}
 if(req.method!=='POST')return response({error:'Not found'},404);
 if(path==='/webhook'){
 const body=await req.text(),sig=req.headers.get('x-line-signature')||'';
@@ -19,6 +24,28 @@ if(sig!==expected)return response({error:'Invalid signature'},401);
 let data;try{data=JSON.parse(body)}catch{return response({error:'Invalid JSON'},400)}
 for(const event of data.events||[]){if(event.source?.type==='group'&&event.source.groupId){await env.KISS_DATA.put('groupId',event.source.groupId)}}
 return response({ok:true});
+}
+if(path==='/photo-confirm'){
+const origin=req.headers.get('origin')||'';
+const allowed='https://kurousagiseira-beep.github.io';
+const cors={'access-control-allow-origin':allowed,'vary':'Origin','access-control-allow-methods':'POST, OPTIONS','access-control-allow-headers':'Content-Type'};
+if(origin!==allowed)return response({error:'許可されていないアクセスです'},403);
+if(req.method==='OPTIONS')return new Response(null,{status:204,headers:cors});
+if(req.method!=='POST')return response({error:'Method not allowed'},405,cors);
+const ip=req.headers.get('cf-connecting-ip')||'unknown',key='photo-attempts:'+ip;
+const attempts=Number(await env.KISS_DATA.get(key)||0);
+if(attempts>=8)return response({error:'試行回数が多すぎます。15分後にお試しください'},429,cors);
+let data;try{data=await req.json()}catch{return response({error:'入力エラー'},400,cors)}
+if(String(data.pin||'')!==env.STAFF_PIN){await env.KISS_DATA.put(key,String(attempts+1),{expirationTtl:900});return response({error:'スタッフPINが違います'},401,cors)}
+await env.KISS_DATA.delete(key);
+if(!Array.isArray(data.names)||!data.names.length||data.names.length>20||data.names.some(n=>typeof n!=='string'||!n.trim()||n.length>40))return response({error:'キャスト名を確認してください'},400,cors);
+const groupId=await env.KISS_DATA.get('groupId');
+if(!groupId)return response({error:'LINEグループが未登録です'},409,cors);
+const names=[...new Set(data.names.map(n=>n.trim()))];
+const message='📸 CLUB KISS 写真指名通知\\n\\n写真指名が確定しました。\\n\\n【指名キャスト】\\n'+names.map(n=>'・'+n).join('\\n')+'\\n\\nキャストの皆さん、ご対応をお願いします。';
+const line=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{'authorization':'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'content-type':'application/json'},body:JSON.stringify({to:groupId,messages:[{type:'text',text:message}]})});
+if(!line.ok)return response({error:'LINE通知に失敗しました'},502,cors);
+return response({ok:true},200,cors);
 }
 if(path==='/login'){
 const ip=req.headers.get('cf-connecting-ip')||'unknown',key='attempts:'+ip;
