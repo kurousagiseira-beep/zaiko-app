@@ -8,6 +8,17 @@ async function valid(req,env){const [exp,sig]=cookie(req).split('.');if(!exp||!s
 
 const photoCors={'access-control-allow-origin':'https://kurousagiseira-beep.github.io','access-control-allow-methods':'GET,POST,OPTIONS','access-control-allow-headers':'Content-Type','vary':'Origin'};
 function photoResponse(obj,status=200){return response(obj,status,photoCors)}
+function photoClock(m){return String(Math.floor(m/60)%24).padStart(2,'0')+':'+String(m%60).padStart(2,'0')}
+function makePhotoSchedule(item,casts,previous){
+ const jp=new Date(item.time+9*3600000);let minute=jp.getUTCHours()*60+jp.getUTCMinutes();
+ minute=Math.ceil(minute/5)*5;
+ const sameDay=previous.filter(r=>r.schedule?.length&&new Date(r.time+9*3600000).toISOString().slice(0,10)===jp.toISOString().slice(0,10));
+ for(const r of sameDay){const end=r.schedule[r.schedule.length-1]?.endMinute;if(Number.isFinite(end))minute=Math.max(minute,end)}
+ const chosen=new Set(item.ids.map(String));const active=casts.filter(c=>c.active!==false);
+ const ordered=[...active.filter(c=>chosen.has(String(c.id))),...active.filter(c=>!chosen.has(String(c.id)))];
+ const schedule=ordered.map(c=>{const duration=chosen.has(String(c.id))?20:10;const startMinute=minute;minute+=duration;return {name:c.name,start:photoClock(startMinute),end:photoClock(minute),startMinute,endMinute:minute,priority:chosen.has(String(c.id))}});
+ return schedule;
+}
 async function readPhotoRequests(env){return JSON.parse(await env.KISS_DATA.get('photo:requests')||'[]')}
 
 export default {async fetch(req,env){
@@ -40,11 +51,15 @@ if(path.startsWith('/photo/')){
   const ids=[...new Set(data.ids.map(String))];
   if(ids.some(id=>!casts.some(c=>c.id===id&&c.active)))return photoResponse({error:'選択したキャストが見つかりません。画面を更新してください'},400);
   const item={id:crypto.randomUUID(),ids,names:ids.map(id=>casts.find(c=>c.id===id).name),status:'pending',time:Date.now()};
+  const list=await readPhotoRequests(env);
+  item.schedule=makePhotoSchedule(item,casts,list.filter(r=>r.status!=='cancel'));
   const groupId=await env.KISS_DATA.get('groupId');
   if(!groupId)return photoResponse({error:'LINEグループが未登録です'},409);
-  const line=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'content-type':'application/json'},body:JSON.stringify({to:groupId,messages:[{type:'text',text:'📸 CLUB KISS 写真指名\nお客様から写真指名が入りました。\n'+item.names.join('・')}]})});
+  const scheduleText=item.schedule.map(r=>r.start+'〜'+r.end+'　'+r.name+(r.priority?' ★写真指名':'')).join('\\n');
+  const message='📸 CLUB KISS 写真指名\\nお客様から写真指名が入りました。\\n'+item.names.join('・')+'\\n\\n【自動タイムテーブル】\\n'+scheduleText;
+  const line=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'content-type':'application/json'},body:JSON.stringify({to:groupId,messages:[{type:'text',text:message}]})});
   if(!line.ok)return photoResponse({error:'LINE送信に失敗しました'},502);
-  const list=await readPhotoRequests(env);list.push(item);
+  list.push(item);
   await env.KISS_DATA.put('photo:requests',JSON.stringify(list.slice(-200)));
   await env.KISS_DATA.put(key,String(n+1),{expirationTtl:900});
   return photoResponse({ok:true,id:item.id});
