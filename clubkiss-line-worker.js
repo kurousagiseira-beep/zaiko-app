@@ -71,6 +71,11 @@ if(path.startsWith('/photo/')){
   const key='photo:attendance:'+today;
   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
   const state=await readAttendance(env,today,casts);
+  if(Array.isArray(data.updates)){
+   if(data.updates.length>100||data.updates.some(x=>!casts.some(c=>c.id===String(x.id))||typeof x.attending!=='boolean'))return photoResponse({error:'出勤設定が不正です'},400);
+   for(const x of data.updates)state[String(x.id)]=x.attending;
+   await env.KISS_DATA.put(key,JSON.stringify(state),{expirationTtl:172800});
+  }
   if(data.id!==undefined){
    const id=String(data.id);
    if(!casts.some(c=>c.id===id))return photoResponse({error:'キャストが見つかりません'},404);
@@ -85,6 +90,8 @@ if(path.startsWith('/photo/')){
   const n=Number(await env.KISS_DATA.get(key)||0);
   if(n>=12)return photoResponse({error:'送信回数が多すぎます。しばらくお待ちください'},429);
   const data=await req.json().catch(()=>({}));
+  const table=String(data.table||'').trim();
+  if(table&&!/^[0-9]{1,3}$/.test(table))return photoResponse({error:'卓番号が不正です'},400);
   const partySize=Number(data.partySize||1);
   if(!Number.isInteger(partySize)||partySize<1||partySize>20)return photoResponse({error:'お客様の人数を確認してください'},400);
   const guestSelections=data.guestSelections||[data.ids];
@@ -98,19 +105,48 @@ if(path.startsWith('/photo/')){
   const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
   const attendance=JSON.parse(await env.KISS_DATA.get('photo:attendance:'+today)||'{}');
   if(ids.some(id=>attendance[id]===false))return photoResponse({error:'休みのキャストは写真指名できません。画面を更新してください'},409);
-  const item={id:crypto.randomUUID(),ids,names:ids.map(id=>casts.find(c=>c.id===id).name),partySize,guestSelections:groupIds,status:'pending',time:Date.now()};
+  const item={id:crypto.randomUUID(),ids,names:ids.map(id=>casts.find(c=>c.id===id).name),table,partySize,guestSelections:groupIds,status:'pending',time:Date.now()};
   const list=await readPhotoRequests(env);
   item.schedule=makePhotoSchedule(item,casts.map(c=>({...c,attending:attendance[c.id]!==false})),list.filter(r=>r.status!=='cancel'));
   const groupId=await env.KISS_DATA.get('groupId');
   if(!groupId)return photoResponse({error:'LINEグループが未登録です'},409);
   const scheduleText=item.schedule.map(r=>r.start+'〜'+r.end+'  '+r.name+(r.priority?' ★写真指名':'')).join('\n');
-  const message=['📸 CLUB KISS 写真指名','お客様から写真指名が入りました。','【'+partySize+'名席・1組】',...groupIds.map((group,i)=>(i+1)+'人目：'+group.map(id=>casts.find(c=>c.id===id)?.name||'不明').join('・')),'','━━━━━━━━━━━━','📋 自動タイムテーブル','━━━━━━━━━━━━',scheduleText,'','★ 写真指名キャスト15分','その他キャストは最大2人組で5分','全体90分以内／受付から最短3分後開始'].join('\n');
+  const message=['📸 CLUB KISS 写真指名','お客様から写真指名が入りました。','【'+(table?table+'卓・':'')+partySize+'名席・1組】',...groupIds.map((group,i)=>(i+1)+'人目：'+group.map(id=>casts.find(c=>c.id===id)?.name||'不明').join('・')),'','━━━━━━━━━━━━','📋 自動タイムテーブル','━━━━━━━━━━━━',scheduleText,'','★ 写真指名キャスト15分','その他キャストは最大2人組で5分','全体90分以内／受付から最短3分後開始'].join('\n');
   const line=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'content-type':'application/json'},body:JSON.stringify({to:groupId,messages:[{type:'text',text:message}]})});
   if(!line.ok)return photoResponse({error:'LINE送信に失敗しました'},502);
   list.push(item);
   await env.KISS_DATA.put('photo:requests',JSON.stringify(list.slice(-200)));
   await env.KISS_DATA.put(key,String(n+1),{expirationTtl:900});
   return photoResponse({ok:true,id:item.id});
+ }
+ if(path==='/photo/schedule'&&req.method==='POST'){
+  const data=await req.json().catch(()=>({}));
+  if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
+  const list=await readPhotoRequests(env),item=list.find(x=>x.id===data.id);
+  if(!item||item.status==='cancel')return photoResponse({error:'受付が見つかりません'},404);
+  if(!Array.isArray(data.schedule)||data.schedule.length!==(item.schedule||[]).length||data.schedule.length>100)return photoResponse({error:'行数が一致しません'},400);
+  const existing=(item.schedule||[]).map(x=>x.name).sort().join('|');
+  if(data.schedule.map(x=>String(x.name||'')).sort().join('|')!==existing)return photoResponse({error:'キャスト構成は変更できません'},400);
+  const parsed=[];
+  for(const x of data.schedule){
+   if(!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(x.start)||!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(x.end))return photoResponse({error:'時間はHH:MMで入力してください'},400);
+   const old=item.schedule.find(y=>y.name===x.name);
+   const startMinute=Number(x.start.slice(0,2))*60+Number(x.start.slice(3));
+   let endMinute=Number(x.end.slice(0,2))*60+Number(x.end.slice(3));if(endMinute<=startMinute)endMinute+=1440;
+   if(endMinute-startMinute>180)return photoResponse({error:'1枠は180分以内にしてください'},400);
+   parsed.push({...old,start:x.start,end:x.end,startMinute,endMinute,duration:endMinute-startMinute});
+  }
+  item.schedule=parsed;item.scheduleEditedAt=Date.now();
+  await env.KISS_DATA.put('photo:requests',JSON.stringify(list));
+  return photoResponse({ok:true,schedule:parsed});
+ }
+ if(path==='/photo/stats'&&req.method==='POST'){
+  const data=await req.json().catch(()=>({}));
+  if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
+  const list=await readPhotoRequests(env),today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  const month=today.slice(0,7),day={},monthly={};
+  for(const r of list){if(r.status==='cancel')continue;const date=new Date(r.time+9*3600000).toISOString().slice(0,10);for(const id of new Set((r.ids||[]).map(String))){const name=(r.names||[])[(r.ids||[]).map(String).indexOf(id)]||id;if(date===today)day[name]=(day[name]||0)+1;if(date.startsWith(month))monthly[name]=(monthly[name]||0)+1}}
+  return photoResponse({date:today,month,day,monthly,historyLimit:200});
  }
  if(path==='/photo/requests'&&req.method==='POST'){
   const data=await req.json().catch(()=>({}));
