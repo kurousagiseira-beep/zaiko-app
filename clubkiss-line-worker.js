@@ -27,6 +27,19 @@ function makePhotoSchedule(item,casts,previous){
  groups.forEach((group,i)=>{const startMinute=minute;minute+=durations[i];for(const c of group)schedule.push({name:c.name,start:photoClock(startMinute),end:photoClock(minute),startMinute,endMinute:minute,priority:chosen.has(String(c.id)),duration:durations[i]})});
  return schedule;
 }
+async function readAttendance(env,day,casts){
+ const key='photo:attendance:'+day;
+ const state=JSON.parse(await env.KISS_DATA.get(key)||'{}');
+ const migrationKey='photo:shuu-default-fix-v1';
+ if(!(await env.KISS_DATA.get(migrationKey))){
+  const shuu=casts.filter(c=>['しゅう','シュウ','SHU','Shu'].includes(String(c.name||'').trim()));
+  let changed=false;
+  for(const c of shuu){if(state[String(c.id)]===false){delete state[String(c.id)];changed=true}}
+  if(changed)await env.KISS_DATA.put(key,JSON.stringify(state),{expirationTtl:172800});
+  await env.KISS_DATA.put(migrationKey,'done');
+ }
+ return state;
+}
 async function readPhotoRequests(env){return JSON.parse(await env.KISS_DATA.get('photo:requests')||'[]')}
 
 export default {async fetch(req,env){
@@ -39,7 +52,7 @@ if(path.startsWith('/photo/')){
  if(path==='/photo/casts'&&req.method==='GET'){
   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
   const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-  const attendance=JSON.parse(await env.KISS_DATA.get('photo:attendance:'+today)||'{}');
+  const attendance=await readAttendance(env,today,casts);
   return photoResponse({casts,attendance,date:today});
  }
  if(path==='/photo/publish'&&req.method==='POST'){
@@ -56,9 +69,9 @@ if(path.startsWith('/photo/')){
   if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
   const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
   const key='photo:attendance:'+today;
-  const state=JSON.parse(await env.KISS_DATA.get(key)||'{}');
+  const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
+  const state=await readAttendance(env,today,casts);
   if(data.id!==undefined){
-   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
    const id=String(data.id);
    if(!casts.some(c=>c.id===id))return photoResponse({error:'キャストが見つかりません'},404);
    if(typeof data.attending!=='boolean')return photoResponse({error:'出勤状況が不正です'},400);
