@@ -40,6 +40,10 @@ if(path.startsWith('/photo/')){
   const ids=[...new Set(data.ids.map(String))];
   if(ids.some(id=>!casts.some(c=>c.id===id&&c.active)))return photoResponse({error:'選択したキャストが見つかりません。画面を更新してください'},400);
   const item={id:crypto.randomUUID(),ids,names:ids.map(id=>casts.find(c=>c.id===id).name),status:'pending',time:Date.now()};
+  const groupId=await env.KISS_DATA.get('groupId');
+  if(!groupId)return photoResponse({error:'LINEグループが未登録です'},409);
+  const line=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'content-type':'application/json'},body:JSON.stringify({to:groupId,messages:[{type:'text',text:'📸 CLUB KISS 写真指名\nお客様から指名が入りました。\n'+item.names.join('・')}]})});
+  if(!line.ok)return photoResponse({error:'LINE送信に失敗しました'},502);
   const list=await readPhotoRequests(env);list.push(item);
   await env.KISS_DATA.put('photo:requests',JSON.stringify(list.slice(-200)));
   await env.KISS_DATA.put(key,String(n+1),{expirationTtl:900});
@@ -57,13 +61,6 @@ if(path.startsWith('/photo/')){
   const list=await readPhotoRequests(env),item=list.find(r=>r.id===data.id);
   if(!item)return photoResponse({error:'受付が見つかりません'},404);
   if(item.status!=='pending')return photoResponse({error:'すでに処理されています'},409);
-  if(data.status==='done'){
-   const groupId=await env.KISS_DATA.get('groupId');
-   if(!groupId)return photoResponse({error:'LINEグループが未登録です'},409);
-   const message='📸 CLUB KISS 写真指名通知\\n\\n写真指名が確定しました。\\n\\n【指名キャスト】\\n'+item.names.map(n=>'・'+n).join('\\n')+'\\n\\nキャストの皆さん、ご対応をお願いします。';
-   const line=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'content-type':'application/json'},body:JSON.stringify({to:groupId,messages:[{type:'text',text:message}]})});
-   if(!line.ok)return photoResponse({error:'LINE通知に失敗しました'},502);
-  }
   item.status=data.status;
   await env.KISS_DATA.put('photo:requests',JSON.stringify(list));
   return photoResponse({ok:true});
