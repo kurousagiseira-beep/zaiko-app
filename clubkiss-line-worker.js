@@ -23,7 +23,8 @@ function makePhotoSchedule(item,casts,previous){
  for(let i=0;i<others.length;i+=2)groups.push(others.slice(i,i+2));
  if(!groups.length)return [];
  const otherCount=Math.ceil(others.length/2);
- const priorityMinutes=priority.length?Math.min(12,Math.max(1,Math.floor((60-otherCount)/priority.length))):0;
+ const preferred=priority.length===1?20:priority.length===2?18:15;
+ const priorityMinutes=priority.length?Math.min(preferred,Math.max(1,Math.floor((60-otherCount)/priority.length))):0;
  const durations=groups.map((g,i)=>i<priority.length?priorityMinutes:1);
  let remaining=60-durations.reduce((n,x)=>n+x,0);
  for(let i=priority.length;i<groups.length&&remaining>0;i++){const left=groups.length-i;const extra=Math.ceil(remaining/left);durations[i]+=extra;remaining-=extra}
@@ -79,6 +80,7 @@ if(path.startsWith('/photo/')){
   const guestSelections=data.guestSelections||[data.ids];
   if(!Array.isArray(guestSelections)||guestSelections.length!==partySize||guestSelections.some(ids=>!Array.isArray(ids)||ids.length<1||ids.length>3))return photoResponse({error:'全員分の写真指名を確認してください（1人最大3人）'},400);
   const groupIds=guestSelections.map(ids=>[...new Set(ids.map(String))]);
+  if(new Set(groupIds.flat()).size>3)return photoResponse({error:'写真指名は1組につき最大3名までです'},400);
   if(!Array.isArray(data.ids)||new Set(data.ids.map(String)).size!==new Set(groupIds.flat()).size||groupIds.flat().some(id=>!data.ids.map(String).includes(id)))return photoResponse({error:'指名内容が一致しません'},400);
   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
   const ids=[...new Set(data.ids.map(String))];
@@ -91,7 +93,7 @@ if(path.startsWith('/photo/')){
   const groupId=await env.KISS_DATA.get('groupId');
   if(!groupId)return photoResponse({error:'LINEグループが未登録です'},409);
   const scheduleText=item.schedule.map(r=>r.start+'〜'+r.end+'  '+r.name+(r.priority?' ★写真指名':'')).join('\n');
-  const message=['📸 CLUB KISS 写真指名','お客様から写真指名が入りました。','【'+partySize+'名席・1組】',...groupIds.map((group,i)=>(i+1)+'人目：'+group.map(id=>casts.find(c=>c.id===id)?.name||'不明').join('・')),'','━━━━━━━━━━━━','📋 自動タイムテーブル','━━━━━━━━━━━━',scheduleText,'','★ 写真指名キャスト優先・長め','全体60分以内／受付から最短3分後開始'].join('\n');
+  const message=['📸 CLUB KISS 写真指名','お客様から写真指名が入りました。','【'+partySize+'名席・1組】',...groupIds.map((group,i)=>(i+1)+'人目：'+group.map(id=>casts.find(c=>c.id===id)?.name||'不明').join('・')),'','━━━━━━━━━━━━','📋 自動タイムテーブル','━━━━━━━━━━━━',scheduleText,'','★ 写真指名キャスト優先・長め','その他キャストは最大2人組','全体60分以内／受付から最短3分後開始'].join('\n');
   const line=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'content-type':'application/json'},body:JSON.stringify({to:groupId,messages:[{type:'text',text:message}]})});
   if(!line.ok)return photoResponse({error:'LINE送信に失敗しました'},502);
   list.push(item);
