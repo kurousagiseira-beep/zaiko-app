@@ -85,6 +85,36 @@ if(path.startsWith('/photo/')){
   }
   return photoResponse({date:today,attendance:state});
  }
+ if(path==='/photo/shared'&&(req.method==='GET'||req.method==='POST')){
+  const data=req.method==='POST'?await req.json().catch(()=>({})):{table:url.searchParams.get('table')};
+  const table=String(data.table||'').trim();
+  if(!/^(?:[2-9]|VIP[1-3])$/.test(table))return photoResponse({error:'卓番号が不正です'},400);
+  const day=new Date(Date.now()+9*3600000).toISOString().slice(0,10),key='photo:shared:'+day+':'+table;
+  const list=await readPhotoRequests(env);
+  if(list.some(r=>String(r.table)===table&&r.status!=='cancel'&&new Date(r.time+9*3600000).toISOString().slice(0,10)===day))return photoResponse({error:'この卓の受付は確定済みです',completed:true},409);
+  let state=JSON.parse(await env.KISS_DATA.get(key)||'null');
+  if(req.method==='GET')return photoResponse({state:state||null});
+  if(data.action==='init'){
+    const count=Number(data.partySize);
+    if(!Number.isInteger(count)||count<1||count>20)return photoResponse({error:'人数は1〜20名にしてください'},400);
+    if(!state){state={table,partySize:count,guestSelections:Array.from({length:count},()=>[]),revision:1,updatedAt:Date.now()};await env.KISS_DATA.put(key,JSON.stringify(state),{expirationTtl:86400})}
+    return photoResponse({state});
+  }
+  if(!state)return photoResponse({error:'卓の共有データがありません。人数を選んで開始してください'},404);
+  if(data.action==='select'){
+    const index=Number(data.index),ids=Array.isArray(data.ids)?[...new Set(data.ids.map(String))]:[];
+    if(!Number.isInteger(index)||index<0||index>=state.partySize||ids.length>3)return photoResponse({error:'選択内容が不正です'},400);
+    if(Number(data.revision)!==state.revision)return photoResponse({error:'別の端末で変更されました。最新の内容を読み込みました',state,conflict:true},409);
+    const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
+    if(ids.some(id=>!casts.some(c=>String(c.id)===id&&c.active!==false)))return photoResponse({error:'選択したキャストが見つかりません'},400);
+    const next=state.guestSelections.map((v,i)=>i===index?ids:v);
+    if(new Set(next.flat()).size>3)return photoResponse({error:'同じ卓で指名できるキャストは合計3名までです',state},400);
+    state.guestSelections=next;state.revision++;state.updatedAt=Date.now();
+    await env.KISS_DATA.put(key,JSON.stringify(state),{expirationTtl:86400});
+    return photoResponse({state});
+  }
+  return photoResponse({error:'操作が不正です'},400);
+ }
  if(path==='/photo/table-check'&&req.method==='GET'){
   const table=String(url.searchParams.get('table')||'').trim();
   if(!/^(?:[2-9]|VIP[1-3])$/.test(table))return photoResponse({error:'卓番号を確認してください'},400);
@@ -102,7 +132,10 @@ if(path.startsWith('/photo/')){
   if(!/^(?:[2-9]|VIP[1-3])$/.test(table))return photoResponse({error:'卓番号を入力してください'},400);
   const partySize=Number(data.partySize||1);
   if(!Number.isInteger(partySize)||partySize<1||partySize>20)return photoResponse({error:'お客様の人数を確認してください'},400);
-  const guestSelections=data.guestSelections||[data.ids];
+  const sharedKey='photo:shared:'+new Date(Date.now()+9*3600000).toISOString().slice(0,10)+':'+table;
+  const shared=JSON.parse(await env.KISS_DATA.get(sharedKey)||'null');
+  if(!shared||shared.partySize!==partySize||Number(data.revision)!==shared.revision)return photoResponse({error:'共有データが更新されています。画面を更新して確認してください'},409);
+  const guestSelections=shared.guestSelections;
   if(!Array.isArray(guestSelections)||guestSelections.length!==partySize||guestSelections.some(ids=>!Array.isArray(ids)||ids.length<1||ids.length>3))return photoResponse({error:'全員分の写真指名を確認してください（1人最大3人）'},400);
   const groupIds=guestSelections.map(ids=>[...new Set(ids.map(String))]);
   if(new Set(groupIds.flat()).size>3)return photoResponse({error:'写真指名は1組につき最大3名までです'},400);
