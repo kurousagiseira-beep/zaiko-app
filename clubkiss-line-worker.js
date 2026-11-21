@@ -38,7 +38,9 @@ if(path.startsWith('/photo/')){
  if(req.headers.get('origin')&&req.headers.get('origin')!=='https://kurousagiseira-beep.github.io')return photoResponse({error:'許可されていません'},403);
  if(path==='/photo/casts'&&req.method==='GET'){
   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
-  return photoResponse({casts});
+  const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  const attendance=JSON.parse(await env.KISS_DATA.get('photo:attendance:'+today)||'{}');
+  return photoResponse({casts,attendance,date:today});
  }
  if(path==='/photo/publish'&&req.method==='POST'){
   const data=await req.json().catch(()=>({}));
@@ -82,6 +84,7 @@ if(path.startsWith('/photo/')){
   if(ids.some(id=>!casts.some(c=>c.id===id&&c.active)))return photoResponse({error:'選択したキャストが見つかりません。画面を更新してください'},400);
   const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
   const attendance=JSON.parse(await env.KISS_DATA.get('photo:attendance:'+today)||'{}');
+  if(ids.some(id=>attendance[id]===false))return photoResponse({error:'休みのキャストは写真指名できません。画面を更新してください'},409);
   const item={id:crypto.randomUUID(),ids,names:ids.map(id=>casts.find(c=>c.id===id).name),partySize,guestSelections:groupIds,status:'pending',time:Date.now()};
   const list=await readPhotoRequests(env);
   item.schedule=makePhotoSchedule(item,casts.map(c=>({...c,attending:attendance[c.id]!==false})),list.filter(r=>r.status!=='cancel'));
