@@ -35,7 +35,7 @@ if(path.startsWith('/photo/')){
   const n=Number(await env.KISS_DATA.get(key)||0);
   if(n>=12)return photoResponse({error:'送信回数が多すぎます。しばらくお待ちください'},429);
   const data=await req.json().catch(()=>({}));
-  if(!Array.isArray(data.ids)||data.ids.length<1||data.ids.length>20)return photoResponse({error:'キャストを選んでください'},400);
+  if(!Array.isArray(data.ids)||data.ids.length<1||data.ids.length>3)return photoResponse({error:'キャストを選んでください'},400);
   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
   const ids=[...new Set(data.ids.map(String))];
   if(ids.some(id=>!casts.some(c=>c.id===id&&c.active)))return photoResponse({error:'選択したキャストが見つかりません。画面を更新してください'},400);
