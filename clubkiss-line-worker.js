@@ -5,9 +5,72 @@ async function mac(secret,data){const k=await crypto.subtle.importKey('raw',enc.
 function response(obj,status=200,headers={}){return new Response(JSON.stringify(obj),{status,headers:{'content-type':'application/json;charset=utf-8','cache-control':'no-store',...headers}})}
 function cookie(req){return (req.headers.get('cookie')||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('kiss_session='))?.slice(13)||''}
 async function valid(req,env){const [exp,sig]=cookie(req).split('.');if(!exp||!sig||!/^\d+$/.test(exp)||Number(exp)<Date.now())return false;return (await mac(env.STAFF_PIN,exp))===sig}
+
+const photoCors={'access-control-allow-origin':'https://kurousagiseira-beep.github.io','access-control-allow-methods':'GET,POST,OPTIONS','access-control-allow-headers':'Content-Type','vary':'Origin'};
+function photoResponse(obj,status=200){return response(obj,status,photoCors)}
+async function readPhotoRequests(env){return JSON.parse(await env.KISS_DATA.get('photo:requests')||'[]')}
+
 export default {async fetch(req,env){
 const url=new URL(req.url),path=url.pathname;
 if(path==='/')return new Response(page,{headers:{'content-type':'text/html;charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
+
+if(path.startsWith('/photo/')){
+ if(req.method==='OPTIONS')return new Response(null,{status:204,headers:photoCors});
+ if(req.headers.get('origin')&&req.headers.get('origin')!=='https://kurousagiseira-beep.github.io')return photoResponse({error:'許可されていません'},403);
+ if(path==='/photo/casts'&&req.method==='GET'){
+  const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
+  return photoResponse({casts});
+ }
+ if(path==='/photo/publish'&&req.method==='POST'){
+  const data=await req.json().catch(()=>({}));
+  if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
+  if(!Array.isArray(data.casts)||data.casts.length>100)return photoResponse({error:'登録内容が不正です'},400);
+  const casts=data.casts.map(c=>({id:String(c.id),name:String(c.name||'').slice(0,60),bio:String(c.bio||'').slice(0,500),active:c.active!==false,photos:Array.isArray(c.photos)?c.photos.filter(p=>typeof p==='string'&&p.startsWith('data:image/')).slice(0,10):[]}));
+  if(casts.some(c=>!c.name))return photoResponse({error:'キャスト名を確認してください'},400);
+  try{await env.KISS_DATA.put('photo:casts',JSON.stringify(casts))}catch{return photoResponse({error:'写真の容量が大きすぎます。枚数を減らしてください'},413)}
+  return photoResponse({ok:true,count:casts.length});
+ }
+ if(path==='/photo/submit'&&req.method==='POST'){
+  const ip=req.headers.get('cf-connecting-ip')||'unknown',key='photo:rate:'+ip;
+  const n=Number(await env.KISS_DATA.get(key)||0);
+  if(n>=12)return photoResponse({error:'送信回数が多すぎます。しばらくお待ちください'},429);
+  const data=await req.json().catch(()=>({}));
+  if(!Array.isArray(data.ids)||data.ids.length<1||data.ids.length>20)return photoResponse({error:'キャストを選んでください'},400);
+  const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
+  const ids=[...new Set(data.ids.map(String))];
+  if(ids.some(id=>!casts.some(c=>c.id===id&&c.active)))return photoResponse({error:'選択したキャストが見つかりません。画面を更新してください'},400);
+  const item={id:crypto.randomUUID(),ids,names:ids.map(id=>casts.find(c=>c.id===id).name),status:'pending',time:Date.now()};
+  const list=await readPhotoRequests(env);list.push(item);
+  await env.KISS_DATA.put('photo:requests',JSON.stringify(list.slice(-200)));
+  await env.KISS_DATA.put(key,String(n+1),{expirationTtl:900});
+  return photoResponse({ok:true,id:item.id});
+ }
+ if(path==='/photo/requests'&&req.method==='POST'){
+  const data=await req.json().catch(()=>({}));
+  if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
+  return photoResponse({requests:await readPhotoRequests(env)});
+ }
+ if(path==='/photo/status'&&req.method==='POST'){
+  const data=await req.json().catch(()=>({}));
+  if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
+  if(!['done','cancel'].includes(data.status))return photoResponse({error:'操作が不正です'},400);
+  const list=await readPhotoRequests(env),item=list.find(r=>r.id===data.id);
+  if(!item)return photoResponse({error:'受付が見つかりません'},404);
+  if(item.status!=='pending')return photoResponse({error:'すでに処理されています'},409);
+  if(data.status==='done'){
+   const groupId=await env.KISS_DATA.get('groupId');
+   if(!groupId)return photoResponse({error:'LINEグループが未登録です'},409);
+   const message='📸 CLUB KISS 写真指名通知\\n\\n写真指名が確定しました。\\n\\n【指名キャスト】\\n'+item.names.map(n=>'・'+n).join('\\n')+'\\n\\nキャストの皆さん、ご対応をお願いします。';
+   const line=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'content-type':'application/json'},body:JSON.stringify({to:groupId,messages:[{type:'text',text:message}]})});
+   if(!line.ok)return photoResponse({error:'LINE通知に失敗しました'},502);
+  }
+  item.status=data.status;
+  await env.KISS_DATA.put('photo:requests',JSON.stringify(list));
+  return photoResponse({ok:true});
+ }
+ return photoResponse({error:'Not found'},404);
+}
+
 if(path==='/session')return response({ok:await valid(req,env)});
 if(req.method==='OPTIONS'&&path==='/photo-confirm'){
 const origin=req.headers.get('origin')||'';
