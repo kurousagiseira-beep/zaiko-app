@@ -14,7 +14,7 @@ function makePhotoSchedule(item,casts,previous){
  minute=Math.ceil(minute/5)*5;
  const sameDay=previous.filter(r=>r.schedule?.length&&new Date(r.time+9*3600000).toISOString().slice(0,10)===jp.toISOString().slice(0,10));
  for(const r of sameDay){const end=r.schedule[r.schedule.length-1]?.endMinute;if(Number.isFinite(end))minute=Math.max(minute,end)}
- const chosen=new Set(item.ids.map(String));const registered=casts.filter(c=>c.name&&String(c.name).trim());
+ const chosen=new Set(item.ids.map(String));const registered=casts.filter(c=>c.name&&String(c.name).trim()&&c.attending!==false);
  const ordered=[...registered.filter(c=>chosen.has(String(c.id))),...registered.filter(c=>!chosen.has(String(c.id)))];
  const schedule=ordered.map(c=>{const duration=chosen.has(String(c.id))?20:10;const startMinute=minute;minute+=duration;return {name:c.name,start:photoClock(startMinute),end:photoClock(minute),startMinute,endMinute:minute,priority:chosen.has(String(c.id))}});
  return schedule;
@@ -41,6 +41,22 @@ if(path.startsWith('/photo/')){
   try{await env.KISS_DATA.put('photo:casts',JSON.stringify(casts))}catch{return photoResponse({error:'写真の容量が大きすぎます。枚数を減らしてください'},413)}
   return photoResponse({ok:true,count:casts.length});
  }
+ if(path==='/photo/attendance'&&req.method==='POST'){
+  const data=await req.json().catch(()=>({}));
+  if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
+  const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  const key='photo:attendance:'+today;
+  const state=JSON.parse(await env.KISS_DATA.get(key)||'{}');
+  if(data.id!==undefined){
+   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
+   const id=String(data.id);
+   if(!casts.some(c=>c.id===id))return photoResponse({error:'キャストが見つかりません'},404);
+   if(typeof data.attending!=='boolean')return photoResponse({error:'出勤状況が不正です'},400);
+   state[id]=data.attending;
+   await env.KISS_DATA.put(key,JSON.stringify(state),{expirationTtl:172800});
+  }
+  return photoResponse({date:today,attendance:state});
+ }
  if(path==='/photo/submit'&&req.method==='POST'){
   const ip=req.headers.get('cf-connecting-ip')||'unknown',key='photo:rate:'+ip;
   const n=Number(await env.KISS_DATA.get(key)||0);
@@ -50,9 +66,11 @@ if(path.startsWith('/photo/')){
   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
   const ids=[...new Set(data.ids.map(String))];
   if(ids.some(id=>!casts.some(c=>c.id===id&&c.active)))return photoResponse({error:'選択したキャストが見つかりません。画面を更新してください'},400);
+  const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  const attendance=JSON.parse(await env.KISS_DATA.get('photo:attendance:'+today)||'{}');
   const item={id:crypto.randomUUID(),ids,names:ids.map(id=>casts.find(c=>c.id===id).name),status:'pending',time:Date.now()};
   const list=await readPhotoRequests(env);
-  item.schedule=makePhotoSchedule(item,casts,list.filter(r=>r.status!=='cancel'));
+  item.schedule=makePhotoSchedule(item,casts.map(c=>({...c,attending:attendance[c.id]!==false})),list.filter(r=>r.status!=='cancel'));
   const groupId=await env.KISS_DATA.get('groupId');
   if(!groupId)return photoResponse({error:'LINEグループが未登録です'},409);
   const scheduleText=item.schedule.map(r=>r.start+'〜'+r.end+'  '+r.name+(r.priority?' ★写真指名':'')).join('\n');
