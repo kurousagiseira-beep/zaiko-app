@@ -14,8 +14,8 @@ function makePhotoSchedule(item,casts,previous){
  minute=Math.ceil(minute/5)*5;
  const sameDay=previous.filter(r=>r.schedule?.length&&new Date(r.time+9*3600000).toISOString().slice(0,10)===jp.toISOString().slice(0,10));
  for(const r of sameDay){const end=r.schedule[r.schedule.length-1]?.endMinute;if(Number.isFinite(end))minute=Math.max(minute,end)}
- const chosen=new Set(item.ids.map(String));const active=casts.filter(c=>c.active!==false);
- const ordered=[...active.filter(c=>chosen.has(String(c.id))),...active.filter(c=>!chosen.has(String(c.id)))];
+ const chosen=new Set(item.ids.map(String));const registered=casts.filter(c=>c.name&&String(c.name).trim());
+ const ordered=[...registered.filter(c=>chosen.has(String(c.id))),...registered.filter(c=>!chosen.has(String(c.id)))];
  const schedule=ordered.map(c=>{const duration=chosen.has(String(c.id))?20:10;const startMinute=minute;minute+=duration;return {name:c.name,start:photoClock(startMinute),end:photoClock(minute),startMinute,endMinute:minute,priority:chosen.has(String(c.id))}});
  return schedule;
 }
