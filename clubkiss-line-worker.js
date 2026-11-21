@@ -42,7 +42,7 @@ if(path.startsWith('/photo/')){
   const item={id:crypto.randomUUID(),ids,names:ids.map(id=>casts.find(c=>c.id===id).name),status:'pending',time:Date.now()};
   const groupId=await env.KISS_DATA.get('groupId');
   if(!groupId)return photoResponse({error:'LINEグループが未登録です'},409);
-  const line=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'content-type':'application/json'},body:JSON.stringify({to:groupId,messages:[{type:'text',text:'📸 CLUB KISS 写真指名\nお客様から指名が入りました。\n'+item.names.join('・')}]})});
+  const line=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'content-type':'application/json'},body:JSON.stringify({to:groupId,messages:[{type:'text',text:'📸 CLUB KISS 写真指名\nお客様から写真指名が入りました。\n'+item.names.join('・')}]})});
   if(!line.ok)return photoResponse({error:'LINE送信に失敗しました'},502);
   const list=await readPhotoRequests(env);list.push(item);
   await env.KISS_DATA.put('photo:requests',JSON.stringify(list.slice(-200)));
