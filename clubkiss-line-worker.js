@@ -87,10 +87,10 @@ if(path.startsWith('/photo/')){
  }
  if(path==='/photo/table-check'&&req.method==='GET'){
   const table=String(url.searchParams.get('table')||'').trim();
-  if(!/^[1-9][0-9]{0,2}$/.test(table))return photoResponse({error:'卓番号を確認してください'},400);
+  if(!/^(?:[2-9]|VIP[1-3])$/.test(table))return photoResponse({error:'卓番号を確認してください'},400);
   const day=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
   const list=await readPhotoRequests(env);
-  const active=list.find(r=>String(Number(r.table))===table&&r.status!=='cancel'&&new Date(r.time+9*3600000).toISOString().slice(0,10)===day);
+  const active=list.find(r=>String(r.table)===table&&r.status!=='cancel'&&new Date(r.time+9*3600000).toISOString().slice(0,10)===day);
   return photoResponse({occupied:!!active,table});
  }
  if(path==='/photo/submit'&&req.method==='POST'){
@@ -99,7 +99,7 @@ if(path.startsWith('/photo/')){
   if(n>=12)return photoResponse({error:'送信回数が多すぎます。しばらくお待ちください'},429);
   const data=await req.json().catch(()=>({}));
   const table=String(data.table||'').trim();
-  if(!/^[1-9][0-9]{0,2}$/.test(table))return photoResponse({error:'卓番号を入力してください'},400);
+  if(!/^(?:[2-9]|VIP[1-3])$/.test(table))return photoResponse({error:'卓番号を入力してください'},400);
   const partySize=Number(data.partySize||1);
   if(!Number.isInteger(partySize)||partySize<1||partySize>20)return photoResponse({error:'お客様の人数を確認してください'},400);
   const guestSelections=data.guestSelections||[data.ids];
@@ -115,7 +115,7 @@ if(path.startsWith('/photo/')){
   if(ids.some(id=>attendance[id]===false))return photoResponse({error:'休みのキャストは写真指名できません。画面を更新してください'},409);
   const item={id:crypto.randomUUID(),ids,names:ids.map(id=>casts.find(c=>c.id===id).name),table,partySize,guestSelections:groupIds,status:'pending',time:Date.now()};
   const list=await readPhotoRequests(env);
-  if(list.some(r=>String(Number(r.table))===table&&r.status!=='cancel'&&new Date(r.time+9*3600000).toISOString().slice(0,10)===today))return photoResponse({error:table+'卓は本日すでに受付済みです。スタッフに確認してください'},409);
+  if(list.some(r=>String(r.table)===table&&r.status!=='cancel'&&new Date(r.time+9*3600000).toISOString().slice(0,10)===today))return photoResponse({error:table+'は本日すでに受付済みです。スタッフに確認してください'},409);
   item.schedule=makePhotoSchedule(item,casts.map(c=>({...c,attending:attendance[c.id]!==false})),list.filter(r=>r.status!=='cancel'));
   const groupId=await env.KISS_DATA.get('groupId');
   if(!groupId)return photoResponse({error:'LINEグループが未登録です'},409);
@@ -168,13 +168,13 @@ if(path.startsWith('/photo/')){
   const list=await readPhotoRequests(env),item=list.find(r=>r.id===data.id);
   if(!item||item.status==='cancel')return photoResponse({error:'受付が見つかりません'},404);
   const table=String(data.table||'').trim(),partySize=Number(data.partySize);
-  if(!/^[1-9][0-9]{0,2}$/.test(table)||!Number.isInteger(partySize)||partySize<1||partySize>20)return photoResponse({error:'卓番号・人数を確認してください'},400);
+  if(!/^(?:[2-9]|VIP[1-3])$/.test(table)||!Number.isInteger(partySize)||partySize<1||partySize>20)return photoResponse({error:'卓番号・人数を確認してください'},400);
   const ids=Array.isArray(data.ids)?[...new Set(data.ids.map(String))]:[];
   if(ids.length<1||ids.length>3)return photoResponse({error:'指名キャストは1〜3名にしてください'},400);
   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
   if(ids.some(id=>!casts.some(c=>c.id===id&&c.active!==false)))return photoResponse({error:'キャストが見つかりません'},400);
   const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-  if(list.some(r=>r.id!==item.id&&r.status!=='cancel'&&String(Number(r.table))===table&&new Date(r.time+9*3600000).toISOString().slice(0,10)===today))return photoResponse({error:table+'卓は受付済みです'},409);
+  if(list.some(r=>r.id!==item.id&&r.status!=='cancel'&&String(r.table)===table&&new Date(r.time+9*3600000).toISOString().slice(0,10)===today))return photoResponse({error:table+'は受付済みです'},409);
   const before={table:item.table,partySize:item.partySize,ids:item.ids,names:item.names};
   item.table=table;item.partySize=partySize;item.ids=ids;item.names=ids.map(id=>casts.find(c=>c.id===id).name);
   item.guestSelections=Array.from({length:partySize},()=>[...ids]);
