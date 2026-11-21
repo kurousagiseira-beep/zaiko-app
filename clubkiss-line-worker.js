@@ -10,13 +10,25 @@ const photoCors={'access-control-allow-origin':'https://kurousagiseira-beep.gith
 function photoResponse(obj,status=200){return response(obj,status,photoCors)}
 function photoClock(m){return String(Math.floor(m/60)%24).padStart(2,'0')+':'+String(m%60).padStart(2,'0')}
 function makePhotoSchedule(item,casts,previous){
- const jp=new Date(item.time+9*3600000);let minute=jp.getUTCHours()*60+jp.getUTCMinutes();
- minute=Math.ceil(minute/5)*5;
- const sameDay=previous.filter(r=>r.schedule?.length&&new Date(r.time+9*3600000).toISOString().slice(0,10)===jp.toISOString().slice(0,10));
- for(const r of sameDay){const end=r.schedule[r.schedule.length-1]?.endMinute;if(Number.isFinite(end))minute=Math.max(minute,end)}
- const chosen=new Set(item.ids.map(String));const registered=casts.filter(c=>c.name&&String(c.name).trim()&&c.attending!==false);
- const ordered=[...registered.filter(c=>chosen.has(String(c.id))),...registered.filter(c=>!chosen.has(String(c.id)))];
- const schedule=ordered.map(c=>{const duration=chosen.has(String(c.id))?20:10;const startMinute=minute;minute+=duration;return {name:c.name,start:photoClock(startMinute),end:photoClock(minute),startMinute,endMinute:minute,priority:chosen.has(String(c.id))}});
+ const jp=new Date(item.time+9*3600000);
+ const day=jp.toISOString().slice(0,10);
+ let minute=jp.getUTCHours()*60+jp.getUTCMinutes()+3+(jp.getUTCSeconds()>0?1:0);
+ const sameDay=previous.filter(r=>r.schedule?.length&&new Date(r.time+9*3600000).toISOString().slice(0,10)===day);
+ for(const r of sameDay){const end=r.schedule.reduce((m,x)=>Math.max(m,Number(x.endMinute)||0),0);minute=Math.max(minute,end)}
+ const chosen=new Set(item.ids.map(String));
+ const registered=casts.filter(c=>c.name&&String(c.name).trim()&&c.attending!==false);
+ const priority=registered.filter(c=>chosen.has(String(c.id)));
+ const others=registered.filter(c=>!chosen.has(String(c.id)));
+ const groups=[...priority.map(c=>[c])];
+ for(let i=0;i<others.length;i+=2)groups.push(others.slice(i,i+2));
+ if(!groups.length)return [];
+ const otherCount=Math.ceil(others.length/2);
+ const priorityMinutes=priority.length?Math.min(12,Math.max(1,Math.floor((60-otherCount)/priority.length))):0;
+ const durations=groups.map((g,i)=>i<priority.length?priorityMinutes:1);
+ let remaining=60-durations.reduce((n,x)=>n+x,0);
+ for(let i=priority.length;i<groups.length&&remaining>0;i++){const left=groups.length-i;const extra=Math.ceil(remaining/left);durations[i]+=extra;remaining-=extra}
+ const schedule=[];
+ groups.forEach((group,i)=>{const startMinute=minute;minute+=durations[i];for(const c of group)schedule.push({name:c.name,start:photoClock(startMinute),end:photoClock(minute),startMinute,endMinute:minute,priority:chosen.has(String(c.id)),duration:durations[i]})});
  return schedule;
 }
 async function readPhotoRequests(env){return JSON.parse(await env.KISS_DATA.get('photo:requests')||'[]')}
@@ -74,7 +86,7 @@ if(path.startsWith('/photo/')){
   const groupId=await env.KISS_DATA.get('groupId');
   if(!groupId)return photoResponse({error:'LINEグループが未登録です'},409);
   const scheduleText=item.schedule.map(r=>r.start+'〜'+r.end+'  '+r.name+(r.priority?' ★写真指名':'')).join('\n');
-  const message=['📸 CLUB KISS 写真指名','お客様から写真指名が入りました。','',item.names.join('・'),'','━━━━━━━━━━━━','📋 自動タイムテーブル','━━━━━━━━━━━━',scheduleText,'','★ 写真指名キャスト（20分）','その他キャスト（10分）'].join('\n');
+  const message=['📸 CLUB KISS 写真指名','お客様から写真指名が入りました。','',item.names.join('・'),'','━━━━━━━━━━━━','📋 自動タイムテーブル','━━━━━━━━━━━━',scheduleText,'','★ 写真指名キャスト優先・長め','全体60分以内／受付から最短3分後開始'].join('\n');
   const line=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'content-type':'application/json'},body:JSON.stringify({to:groupId,messages:[{type:'text',text:message}]})});
   if(!line.ok)return photoResponse({error:'LINE送信に失敗しました'},502);
   list.push(item);
