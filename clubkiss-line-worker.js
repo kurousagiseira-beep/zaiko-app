@@ -55,8 +55,8 @@ if(path.startsWith('/photo/')){
   item.schedule=makePhotoSchedule(item,casts,list.filter(r=>r.status!=='cancel'));
   const groupId=await env.KISS_DATA.get('groupId');
   if(!groupId)return photoResponse({error:'LINEグループが未登録です'},409);
-  const scheduleText=item.schedule.map(r=>r.start+'〜'+r.end+'　'+r.name+(r.priority?' ★写真指名':'')).join('\\n');
-  const message='📸 CLUB KISS 写真指名\\nお客様から写真指名が入りました。\\n'+item.names.join('・')+'\\n\\n【自動タイムテーブル】\\n'+scheduleText;
+  const scheduleText=item.schedule.map(r=>r.start+'〜'+r.end+'  '+r.name+(r.priority?' ★写真指名':'')).join('\n');
+  const message=['📸 CLUB KISS 写真指名','お客様から写真指名が入りました。','',item.names.join('・'),'','━━━━━━━━━━━━','📋 自動タイムテーブル','━━━━━━━━━━━━',scheduleText,'','★ 写真指名キャスト（20分）','その他キャスト（10分）'].join('\n');
   const line=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'content-type':'application/json'},body:JSON.stringify({to:groupId,messages:[{type:'text',text:message}]})});
   if(!line.ok)return photoResponse({error:'LINE送信に失敗しました'},502);
   list.push(item);
