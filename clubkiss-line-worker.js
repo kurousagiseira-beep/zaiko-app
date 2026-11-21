@@ -73,7 +73,7 @@ if(path.startsWith('/photo/')){
   if(n>=12)return photoResponse({error:'送信回数が多すぎます。しばらくお待ちください'},429);
   const data=await req.json().catch(()=>({}));
   const partySize=Number(data.partySize||1);
-  if(!Number.isInteger(partySize)||partySize<1||partySize>5)return photoResponse({error:'お客様の人数を確認してください'},400);
+  if(!Number.isInteger(partySize)||partySize<1||partySize>20)return photoResponse({error:'お客様の人数を確認してください'},400);
   const guestSelections=data.guestSelections||[data.ids];
   if(!Array.isArray(guestSelections)||guestSelections.length!==partySize||guestSelections.some(ids=>!Array.isArray(ids)||ids.length<1||ids.length>3))return photoResponse({error:'全員分の写真指名を確認してください（1人最大3人）'},400);
   const groupIds=guestSelections.map(ids=>[...new Set(ids.map(String))]);
