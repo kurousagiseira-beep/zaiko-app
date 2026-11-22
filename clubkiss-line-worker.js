@@ -59,7 +59,7 @@ if(path.startsWith('/photo/')){
   const ranked=savedOrder.length?savedOrder.map(id=>casts.find(c=>String(c.id)===String(id))).filter(c=>c&&c.active!==false):casts.filter(c=>c.active!==false&&Object.prototype.hasOwnProperty.call(sales,String(c.id))).sort((a,b)=>Number(sales[String(b.id)])-Number(sales[String(a.id)])||String(a.name).localeCompare(String(b.name),'ja'));
   const autoRank=new Map(ranked.slice(0,3).map((c,i)=>[String(c.id),i+1]));
   const visibleCasts=casts.map(c=>({...c,displayNo:savedOrder.length?(autoRank.get(String(c.id))||null):(c.noOverride===0?null:Number.isInteger(c.noOverride)&&c.noOverride>=1&&c.noOverride<=3?c.noOverride:autoRank.get(String(c.id))||null)}));
-  return photoResponse({casts:visibleCasts,attendance,date:today});
+  return photoResponse({casts:visibleCasts,attendance,date:today,featureVersion:'rank-order-v2',rankConfigured:savedOrder.length>0});
  }
  if(path==='/photo/publish'&&req.method==='POST'){
   const data=await req.json().catch(()=>({}));
@@ -271,7 +271,7 @@ if(path.startsWith('/photo/')){
    if(!Array.isArray(order)||order.length>100||new Set(order.map(String)).size!==order.length||order.some(id=>!allowed.has(String(id))))return photoResponse({error:'順位の登録内容が不正です'},400);
    await env.KISS_DATA.put('photo:previous-rank-order',JSON.stringify(order.map(String)));
   }
-  return photoResponse({month,sales:JSON.parse(await env.KISS_DATA.get('photo:previous-sales')||'{}'),rankOrder:JSON.parse(await env.KISS_DATA.get('photo:previous-rank-order')||'[]')});
+  return photoResponse({month,sales:JSON.parse(await env.KISS_DATA.get('photo:previous-sales')||'{}'),rankOrder:JSON.parse(await env.KISS_DATA.get('photo:previous-rank-order')||'[]'),featureVersion:'rank-order-v2'});
  }
  if(path==='/photo/all-rankings'&&req.method==='POST'){
   const data=await req.json().catch(()=>({}));
