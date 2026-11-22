@@ -85,6 +85,19 @@ if(path.startsWith('/photo/')){
   }
   return photoResponse({date:today,attendance:state});
  }
+ if(path==='/photo/table-presence'&&req.method==='POST'){
+  const data=await req.json().catch(()=>({})),table=String(data.table||'');
+  if(!/^(?:[2-9]|VIP[1-3])$/.test(table))return photoResponse({error:'卓番号が不正です'},400);
+  const day=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  await env.KISS_DATA.put('photo:presence:'+day+':'+table,String(Date.now()),{expirationTtl:180});
+  return photoResponse({ok:true});
+ }
+ if(path==='/photo/table-presence'&&req.method==='GET'){
+  const tables=['2','3','4','5','6','7','8','9','VIP1','VIP2','VIP3'];
+  const day=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  const values=await Promise.all(tables.map(t=>env.KISS_DATA.get('photo:presence:'+day+':'+t)));
+  return photoResponse({tables:Object.fromEntries(tables.map((t,i)=>[t,!!values[i]&&Date.now()-Number(values[i])<180000])),windowSeconds:180});
+ }
  if(path==='/photo/shared'&&(req.method==='GET'||req.method==='POST')){
   const data=req.method==='POST'?await req.json().catch(()=>({})):{table:url.searchParams.get('table')};
   const table=String(data.table||'').trim();
