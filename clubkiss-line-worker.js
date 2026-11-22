@@ -212,7 +212,7 @@ if(path.startsWith('/photo/')){
  if(path==='/photo/named-entry'&&req.method==='POST'){
   const data=await req.json().catch(()=>({}));
   const table=String(data.table||'').trim(),castId=String(data.castId||''),can=String(data.can||''),plan=String(data.plan||'');
-  const allowedCans=['スラット ピーチ','スラット グレフル','スラット アロエ','スラット シャルドネ','角ハイ','はなよい'];
+  const allowedCans=['瓶ビール','スラットピーチ','スラットシャルドネ','スラットアロエ','スラットレモン','オレンジジュース','アップルジュース','パイナップルジュース','コーラ','レッドブル'];
   if(!/^(?:[2-9]|VIP[1-3])$/.test(table))return photoResponse({error:'卓番号が不正です'},400);
   if(plan!=='2時間飲み放題'||!allowedCans.includes(can))return photoResponse({error:'飲み放題プラン・缶ものを選び直してください'},400);
   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
