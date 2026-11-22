@@ -9,7 +9,7 @@ async function valid(req,env){const [exp,sig]=cookie(req).split('.');if(!exp||!s
 
 const PUSH_PUBLIC_KEY='BG-HVtZNfdgnE0VklL0DeHfYvAJBac4cBRHVT9F5cm_ANb5H7QdjJdpbQE7nHVBFmW3OmunisUBfNrVOLQvSAQA';
 const pushEnc=new TextEncoder();
-function pushB64(bytes){let str='';for(const b of bytes)str+=String.fromCharCode(b);return btoa(str).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'')}
+function pushB64(bytes){let str='';for(const b of bytes)str+=String.fromCharCode(b);return btoa(str).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'')}
 function pushBytes(str){const bin=atob(str.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-str.length%4)%4));return Uint8Array.from(bin,c=>c.charCodeAt(0))}
 function pushConcat(...arrays){const result=new Uint8Array(arrays.reduce((n,a)=>n+a.length,0));let at=0;for(const a of arrays){result.set(a,at);at+=a.length}return result}
 async function pushHmac(key,data){const k=await crypto.subtle.importKey('raw',key,{name:'HMAC',hash:'SHA-256'},false,['sign']);return new Uint8Array(await crypto.subtle.sign('HMAC',k,data))}
