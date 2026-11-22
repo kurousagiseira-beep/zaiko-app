@@ -179,7 +179,7 @@ if(path.startsWith('/photo/')){
   if(data.action==='init'){
     const count=Number(data.partySize);
     if(!Number.isInteger(count)||count<1||count>20)return photoResponse({error:'人数は1〜20名にしてください'},400);
-    if(!state){state={table,partySize:count,guestSelections:Array.from({length:count},()=>[]),revision:1,updatedAt:Date.now()};await env.KISS_DATA.put(key,JSON.stringify(state),{expirationTtl:86400})}
+    if(!state||data.fresh===true){state={table,partySize:count,guestSelections:Array.from({length:count},()=>[]),revision:(state?.revision||0)+1,updatedAt:Date.now()};await env.KISS_DATA.put(key,JSON.stringify(state),{expirationTtl:86400})}
     return photoResponse({state});
   }
   if(!state)return photoResponse({error:'卓の共有データがありません。人数を選んで開始してください'},404);
