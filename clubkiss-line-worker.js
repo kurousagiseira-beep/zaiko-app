@@ -245,6 +245,17 @@ if(path.startsWith('/photo/')){
   for(const r of list){if(r.status==='cancel')continue;const date=new Date(r.time+9*3600000).toISOString().slice(0,10);for(const id of new Set((r.ids||[]).map(String))){const name=(r.names||[])[(r.ids||[]).map(String).indexOf(id)]||id;if(date===today)day[name]=(day[name]||0)+1;if(date.startsWith(month))monthly[name]=(monthly[name]||0)+1}}
   return photoResponse({date:today,month,day,monthly,historyLimit:200});
  }
+ if(path==='/photo/all-rankings'&&req.method==='POST'){
+ const data=await req.json().catch(()=>({}));
+ if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
+ const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10),month=today.slice(0,7);
+ const requests=await readPhotoRequests(env),history=JSON.parse(await env.KISS_DATA.get('photo:special:history')||'[]');
+ const result={date:today,month,day:{photo:{},send:{},drink:{}},monthly:{photo:{},send:{},drink:{}}};
+ const count=(bucket,name)=>{bucket[name]=(bucket[name]||0)+1};
+ for(const r of requests){if(r.status==='cancel')continue;const date=new Date(r.time+9*3600000).toISOString().slice(0,10);if(!date.startsWith(month))continue;for(const id of new Set((r.ids||[]).map(String))){const name=(r.names||[])[(r.ids||[]).map(String).indexOf(id)]||id;count(result.monthly.photo,name);if(date===today)count(result.day.photo,name)}}
+ for(const x of history){if(x.correctedBy)continue;const date=new Date(x.time+9*3600000).toISOString().slice(0,10);if(!date.startsWith(month))continue;const key=x.kind==='送り指名'?'send':x.kind==='飲み直し'?'drink':null;if(!key)continue;count(result.monthly[key],x.castName);if(date===today)count(result.day[key],x.castName)}
+ return photoResponse({...result,photoHistoryLimit:200,specialHistoryLimit:200});
+ }
  if(path==='/photo/requests'&&req.method==='POST'){
   const data=await req.json().catch(()=>({}));
   if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
