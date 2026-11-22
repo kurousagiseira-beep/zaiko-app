@@ -9,7 +9,7 @@ async function valid(req,env){const [exp,sig]=cookie(req).split('.');if(!exp||!s
 const photoCors={'access-control-allow-origin':'https://kurousagiseira-beep.github.io','access-control-allow-methods':'GET,POST,OPTIONS','access-control-allow-headers':'Content-Type','vary':'Origin'};
 function photoResponse(obj,status=200){return response(obj,status,photoCors)}
 function photoClock(m){return String(Math.floor(m/60)%24).padStart(2,'0')+':'+String(m%60).padStart(2,'0')}
-function makePhotoSchedule(item,casts,previous,sales={}){
+function makePhotoSchedule(item,casts,previous,sales={},rankOrder=[]){
  const jp=new Date(item.time+9*3600000);
  const day=jp.toISOString().slice(0,10);
  let minute=jp.getUTCHours()*60+jp.getUTCMinutes()+3+(jp.getUTCSeconds()>0?1:0);
@@ -18,7 +18,7 @@ function makePhotoSchedule(item,casts,previous,sales={}){
  const chosen=new Set(item.ids.map(String));
  const registered=casts.filter(c=>c.name&&String(c.name).trim()&&c.attending!==false);
  const priority=registered.filter(c=>chosen.has(String(c.id)));
- const others=registered.filter(c=>!chosen.has(String(c.id))).sort((a,b)=>(Number(sales[String(a.id)])||0)-(Number(sales[String(b.id)])||0)||String(a.name).localeCompare(String(b.name),'ja'));
+ const others=registered.filter(c=>!chosen.has(String(c.id))).sort((a,b)=>{const ai=rankOrder.indexOf(String(a.id)),bi=rankOrder.indexOf(String(b.id));if(ai>=0&&bi>=0)return bi-ai;if(ai>=0)return 1;if(bi>=0)return -1;return (Number(sales[String(a.id)])||0)-(Number(sales[String(b.id)])||0)||String(a.name).localeCompare(String(b.name),'ja')});
  const groups=[];
  for(let i=0;i<others.length;i+=2)groups.push(others.slice(i,i+2));
  for(const c of priority)groups.push([c]);
@@ -55,7 +55,8 @@ if(path.startsWith('/photo/')){
   const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
   const attendance=await readAttendance(env,today,casts);
   const sales=JSON.parse(await env.KISS_DATA.get('photo:previous-sales')||'{}');
-  const ranked=casts.filter(c=>c.active!==false&&Object.prototype.hasOwnProperty.call(sales,String(c.id))).sort((a,b)=>Number(sales[String(b.id)])-Number(sales[String(a.id)])||String(a.name).localeCompare(String(b.name),'ja'));
+  const savedOrder=JSON.parse(await env.KISS_DATA.get('photo:previous-rank-order')||'[]');
+  const ranked=savedOrder.length?savedOrder.map(id=>casts.find(c=>String(c.id)===String(id))).filter(c=>c&&c.active!==false):casts.filter(c=>c.active!==false&&Object.prototype.hasOwnProperty.call(sales,String(c.id))).sort((a,b)=>Number(sales[String(b.id)])-Number(sales[String(a.id)])||String(a.name).localeCompare(String(b.name),'ja'));
   const autoRank=new Map(ranked.slice(0,3).map((c,i)=>[String(c.id),i+1]));
   const visibleCasts=casts.map(c=>({...c,displayNo:c.noOverride===0?null:Number.isInteger(c.noOverride)&&c.noOverride>=1&&c.noOverride<=3?c.noOverride:autoRank.get(String(c.id))||null}));
   return photoResponse({casts:visibleCasts,attendance,date:today});
@@ -210,7 +211,7 @@ if(path.startsWith('/photo/')){
   const list=await readPhotoRequests(env);
   if(list.some(r=>String(r.table)===table&&r.status!=='cancel'&&new Date(r.time+9*3600000).toISOString().slice(0,10)===today))return photoResponse({error:table+'は本日すでに受付済みです。スタッフに確認してください'},409);
   const sales=JSON.parse(await env.KISS_DATA.get('photo:previous-sales')||'{}');
-  item.schedule=makePhotoSchedule(item,casts.map(c=>({...c,attending:attendance[c.id]!==false})),list.filter(r=>r.status!=='cancel'),sales);
+  item.schedule=makePhotoSchedule(item,casts.map(c=>({...c,attending:attendance[c.id]!==false})),list.filter(r=>r.status!=='cancel'),sales,JSON.parse(await env.KISS_DATA.get('photo:previous-rank-order')||'[]'));
   const groupId=await env.KISS_DATA.get('groupId');
   if(!groupId)return photoResponse({error:'LINEグループが未登録です'},409);
   const scheduleText=item.schedule.map(r=>r.start+'〜'+r.end+'  '+r.name+(r.priority?' ★写真指名':'')).join('\n');
@@ -263,7 +264,14 @@ if(path.startsWith('/photo/')){
    if(Object.keys(data.sales).some(id=>!allowed.has(id)||!Number.isFinite(Number(data.sales[id]))||Number(data.sales[id])<0))return photoResponse({error:'売上の数値を確認してください'},400);
    await env.KISS_DATA.put('photo:previous-sales',JSON.stringify(Object.fromEntries(Object.entries(data.sales).map(([id,n])=>[id,Number(n)]))));
   }
-  return photoResponse({month,sales:JSON.parse(await env.KISS_DATA.get('photo:previous-sales')||'{}')});
+  if(data.rankOrder!==undefined){
+   const order=data.rankOrder;
+   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
+   const allowed=new Set(casts.map(c=>String(c.id)));
+   if(!Array.isArray(order)||order.length>100||new Set(order.map(String)).size!==order.length||order.some(id=>!allowed.has(String(id))))return photoResponse({error:'順位の登録内容が不正です'},400);
+   await env.KISS_DATA.put('photo:previous-rank-order',JSON.stringify(order.map(String)));
+  }
+  return photoResponse({month,sales:JSON.parse(await env.KISS_DATA.get('photo:previous-sales')||'{}'),rankOrder:JSON.parse(await env.KISS_DATA.get('photo:previous-rank-order')||'[]')});
  }
  if(path==='/photo/all-rankings'&&req.method==='POST'){
   const data=await req.json().catch(()=>({}));
@@ -321,7 +329,7 @@ if(path.startsWith('/photo/')){
   const attendance=await readAttendance(env,today,casts);
   const earlier=list.filter(r=>r.id!==item.id&&r.status!=='cancel'&&r.time<item.time);
   const sales=JSON.parse(await env.KISS_DATA.get('photo:previous-sales')||'{}');
-  item.schedule=makePhotoSchedule(item,casts.map(c=>({...c,attending:attendance[c.id]!==false})),earlier,sales);
+  item.schedule=makePhotoSchedule(item,casts.map(c=>({...c,attending:attendance[c.id]!==false})),earlier,sales,JSON.parse(await env.KISS_DATA.get('photo:previous-rank-order')||'[]'));
   await env.KISS_DATA.put('photo:requests',JSON.stringify(list));
   return photoResponse({ok:true,item});
  }
