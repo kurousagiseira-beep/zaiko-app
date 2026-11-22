@@ -246,15 +246,34 @@ if(path.startsWith('/photo/')){
   return photoResponse({date:today,month,day,monthly,historyLimit:200});
  }
  if(path==='/photo/all-rankings'&&req.method==='POST'){
- const data=await req.json().catch(()=>({}));
- if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
- const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10),month=today.slice(0,7);
- const requests=await readPhotoRequests(env),history=JSON.parse(await env.KISS_DATA.get('photo:special:history')||'[]');
- const result={date:today,month,day:{photo:{},send:{},drink:{}},monthly:{photo:{},send:{},drink:{}}};
- const count=(bucket,name)=>{bucket[name]=(bucket[name]||0)+1};
- for(const r of requests){if(r.status==='cancel')continue;const date=new Date(r.time+9*3600000).toISOString().slice(0,10);if(!date.startsWith(month))continue;for(const id of new Set((r.ids||[]).map(String))){const name=(r.names||[])[(r.ids||[]).map(String).indexOf(id)]||id;count(result.monthly.photo,name);if(date===today)count(result.day.photo,name)}}
- for(const x of history){if(x.correctedBy)continue;const date=new Date(x.time+9*3600000).toISOString().slice(0,10);if(!date.startsWith(month))continue;const key=x.kind==='送り指名'?'send':x.kind==='飲み直し'?'drink':null;if(!key)continue;count(result.monthly[key],x.castName);if(date===today)count(result.day[key],x.castName)}
- return photoResponse({...result,photoHistoryLimit:200,specialHistoryLimit:200});
+  const data=await req.json().catch(()=>({}));
+  if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
+  const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  const currentMonth=today.slice(0,7);
+  const requests=await readPhotoRequests(env),history=JSON.parse(await env.KISS_DATA.get('photo:special:history')||'[]');
+  const monthOf=time=>new Date(Number(time)+9*3600000).toISOString().slice(0,7);
+  const available=new Set([currentMonth]);
+  for(const r of requests)if(r.status!=='cancel'&&Number.isFinite(Number(r.time)))available.add(monthOf(r.time));
+  for(const x of history)if(Number.isFinite(Number(x.time)))available.add(monthOf(x.time));
+  const months=[...available].sort().reverse();
+  const selected=typeof data.month==='string'&&/^\d{4}-\d{2}$/.test(data.month)?data.month:currentMonth;
+  if(!months.includes(selected))return photoResponse({error:'この月の集計データはありません',months},404);
+  const rankings={photo:{},send:{},drink:{}},totals={photo:0,send:0,drink:0},newGuests={groups:0,people:0};
+  const count=(key,name)=>{rankings[key][name]=(rankings[key][name]||0)+1;totals[key]++};
+  for(const r of requests){
+   if(r.status==='cancel'||monthOf(r.time)!==selected)continue;
+   newGuests.groups++;newGuests.people+=Number(r.partySize)||0;
+   for(const id of new Set((r.ids||[]).map(String))){
+    const name=(r.names||[])[(r.ids||[]).map(String).indexOf(id)]||id;
+    count('photo',name);
+   }
+  }
+  for(const x of history){
+   if(x.correctedBy||monthOf(x.time)!==selected)continue;
+   const key=x.kind==='送り指名'?'send':x.kind==='飲み直し'?'drink':null;
+   if(key)count(key,x.castName||String(x.castId));
+  }
+  return photoResponse({month:selected,months,rankings,totals,newGuests,limitedHistory:true,requestHistoryLimit:200,specialHistoryLimit:200});
  }
  if(path==='/photo/requests'&&req.method==='POST'){
   const data=await req.json().catch(()=>({}));
