@@ -54,13 +54,17 @@ if(path.startsWith('/photo/')){
   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
   const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
   const attendance=await readAttendance(env,today,casts);
-  return photoResponse({casts,attendance,date:today});
+  const sales=JSON.parse(await env.KISS_DATA.get('photo:previous-sales')||'{}');
+  const ranked=casts.filter(c=>c.active!==false&&Object.prototype.hasOwnProperty.call(sales,String(c.id))).sort((a,b)=>Number(sales[String(b.id)])-Number(sales[String(a.id)])||String(a.name).localeCompare(String(b.name),'ja'));
+  const autoRank=new Map(ranked.slice(0,3).map((c,i)=>[String(c.id),i+1]));
+  const visibleCasts=casts.map(c=>({...c,displayNo:c.noOverride===0?null:Number.isInteger(c.noOverride)&&c.noOverride>=1&&c.noOverride<=3?c.noOverride:autoRank.get(String(c.id))||null}));
+  return photoResponse({casts:visibleCasts,attendance,date:today});
  }
  if(path==='/photo/publish'&&req.method==='POST'){
   const data=await req.json().catch(()=>({}));
   if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
   if(!Array.isArray(data.casts)||data.casts.length>100)return photoResponse({error:'登録内容が不正です'},400);
-  const casts=data.casts.map(c=>({id:String(c.id),name:String(c.name||'').slice(0,60),bio:String(c.bio||'').slice(0,500),active:c.active!==false,photos:Array.isArray(c.photos)?c.photos.filter(p=>typeof p==='string'&&p.startsWith('data:image/')).slice(0,10):[]}));
+  const casts=data.casts.map(c=>({id:String(c.id),name:String(c.name||'').slice(0,60),bio:String(c.bio||'').slice(0,500),active:c.active!==false,noOverride:c.noOverride===0?0:[1,2,3].includes(Number(c.noOverride))?Number(c.noOverride):null,photos:Array.isArray(c.photos)?c.photos.filter(p=>typeof p==='string'&&p.startsWith('data:image/')).slice(0,10):[]}));
   if(casts.some(c=>!c.name))return photoResponse({error:'キャスト名を確認してください'},400);
   try{await env.KISS_DATA.put('photo:casts',JSON.stringify(casts))}catch{return photoResponse({error:'写真の容量が大きすぎます。枚数を減らしてください'},413)}
   return photoResponse({ok:true,count:casts.length});
