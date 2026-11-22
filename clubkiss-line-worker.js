@@ -210,7 +210,14 @@ if(path.startsWith('/photo/')){
   const quantity=softDrinks.includes(can)?1:2;
   const message=['👑 CLUB KISS 新規指名','【'+table+'卓】','指名キャスト：'+cast.name,'飲み放題：2時間','サービス：'+can+' × '+quantity+'本'+(quantity===2?'（同じ種類）':''),'受付日時：'+new Date(Date.now()+9*3600000).toISOString().slice(0,16).replace('T',' ')].join('\n');
   const line=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'content-type':'application/json'},body:JSON.stringify({to:groupId,messages:[{type:'text',text:message}]})});
-  if(!line.ok)return photoResponse({error:'LINE通知に失敗しました'},502);
+  if(!line.ok){
+   const lineStatus=line.status;
+   const detail=await line.json().catch(()=>({}));
+   const reasons={400:'送信先またはメッセージの設定が不正です',401:'LINEのチャネルアクセストークンが無効または期限切れです',403:'LINE公式アカウントに送信権限がありません',404:'LINEの送信先が見つかりません',429:'LINEの送信数制限に達しています'};
+   const reason=reasons[lineStatus]||'LINE APIでエラーが発生しました';
+   console.error('named-entry LINE push failed',{status:lineStatus,reason,lineMessage:String(detail.message||'').slice(0,180)});
+   return photoResponse({error:'LINE通知に失敗しました（LINE '+lineStatus+'：'+reason+'）。スタッフに確認してください',lineStatus},502);
+  }
   history.push({id:crypto.randomUUID(),table,castId,castName:cast.name,can,plan,time:Date.now()});
   await env.KISS_DATA.put(historyKey,JSON.stringify(history.slice(-100)),{expirationTtl:172800});
   await env.KISS_DATA.put(rateKey,String(rate+1),{expirationTtl:900});
