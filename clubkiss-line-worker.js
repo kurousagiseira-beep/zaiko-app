@@ -231,13 +231,15 @@ if(path.startsWith('/photo/')){
   if(history.some(x=>x.table===table))return photoResponse({error:'この卓は本日すでに新規指名を受付済みです。スタッフに確認してください'},409);
   const existing=await readPhotoRequests(env);
   if(existing.some(x=>String(x.table)===table&&x.status!=='cancel'&&new Date(x.time+9*3600000).toISOString().slice(0,10)===day))return photoResponse({error:'この卓は本日すでに受付済みです'},409);
-  const message=['👑 CLUB KISS 新規指名','【'+table+'卓】','指名キャスト：'+cast.name,'飲み放題：2時間','サービス：'+can+' × 2本（同じ種類）','受付日時：'+new Date(Date.now()+9*3600000).toISOString().slice(0,16).replace('T',' ')].join('\n');
+  const softDrinks=['オレンジジュース','アップルジュース','パイナップルジュース','コーラ','レッドブル'];
+  const quantity=softDrinks.includes(can)?1:2;
+  const message=['👑 CLUB KISS 新規指名','【'+table+'卓】','指名キャスト：'+cast.name,'飲み放題：2時間','サービス：'+can+' × '+quantity+'本'+(quantity===2?'（同じ種類）':''),'受付日時：'+new Date(Date.now()+9*3600000).toISOString().slice(0,16).replace('T',' ')].join('\n');
   const line=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'content-type':'application/json'},body:JSON.stringify({to:groupId,messages:[{type:'text',text:message}]})});
   if(!line.ok)return photoResponse({error:'LINE通知に失敗しました'},502);
   history.push({id:crypto.randomUUID(),table,castId,castName:cast.name,can,plan,time:Date.now()});
   await env.KISS_DATA.put(historyKey,JSON.stringify(history.slice(-100)),{expirationTtl:172800});
   await env.KISS_DATA.put(rateKey,String(rate+1),{expirationTtl:900});
-  return photoResponse({ok:true,table,castName:cast.name,can,quantity:2});
+  return photoResponse({ok:true,table,castName:cast.name,can,quantity});
  }
  if(path==='/photo/submit'&&req.method==='POST'){
   const ip=req.headers.get('cf-connecting-ip')||'unknown',key='photo:rate:'+ip;
