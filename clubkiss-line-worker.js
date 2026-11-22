@@ -273,9 +273,9 @@ if(path.startsWith('/photo/')){
   }
   return photoResponse({month,sales:JSON.parse(await env.KISS_DATA.get('photo:previous-sales')||'{}'),rankOrder:JSON.parse(await env.KISS_DATA.get('photo:previous-rank-order')||'[]'),featureVersion:'rank-order-v2'});
  }
- if(path==='/photo/all-rankings'&&req.method==='POST'){
-  const data=await req.json().catch(()=>({}));
-  if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
+ if(path==='/photo/all-rankings'&&(req.method==='POST'||req.method==='GET')){
+  const data=req.method==='GET'?{month:new URL(req.url).searchParams.get('month')}:await req.json().catch(()=>({}));
+  if(req.method==='POST'&&(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN))return photoResponse({error:'スタッフPINが違います'},401);
   const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
   const currentMonth=today.slice(0,7);
   const requests=await readPhotoRequests(env),history=JSON.parse(await env.KISS_DATA.get('photo:special:history')||'[]');
