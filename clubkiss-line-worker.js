@@ -40,6 +40,7 @@ function makePhotoSchedule(item,casts,previous,sales={},rankOrder=[]){
  groups.forEach((group,i)=>{const startMinute=minute;minute+=durations[i];for(const c of group)schedule.push({name:c.name,start:photoClock(startMinute),end:photoClock(minute),startMinute,endMinute:minute,priority:chosen.has(String(c.id)),duration:durations[i]})});
  return schedule;
 }
+function photoBusinessDay(now=Date.now()){return new Date(now+9*3600000-5*3600000).toISOString().slice(0,10)}
 async function readAttendance(env,day,casts){
  const key='photo:attendance:'+day;
  const state=JSON.parse(await env.KISS_DATA.get(key)||'{}');
@@ -68,7 +69,7 @@ if(path.startsWith('/photo/')){
  if(req.headers.get('origin')&&req.headers.get('origin')!=='https://kurousagiseira-beep.github.io')return photoResponse({error:'許可されていません'},403);
  if(path==='/photo/casts'&&req.method==='GET'){
   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
-  const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  const today=photoBusinessDay();
   const attendance=await readAttendance(env,today,casts);
   const sales=JSON.parse(await env.KISS_DATA.get('photo:previous-sales')||'{}');
   const savedOrder=JSON.parse(await env.KISS_DATA.get('photo:previous-rank-order')||'[]');
@@ -89,7 +90,7 @@ if(path.startsWith('/photo/')){
  if(path==='/photo/attendance'&&req.method==='POST'){
   const data=await req.json().catch(()=>({}));
   if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
-  const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  const today=photoBusinessDay();
   const key='photo:attendance:'+today;
   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
   const state=await readAttendance(env,today,casts);
@@ -274,8 +275,8 @@ if(path.startsWith('/photo/')){
   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
   const cast=casts.find(c=>String(c.id)===castId&&c.active!==false);
   if(!cast)return photoResponse({error:'指名キャストが見つかりません'},400);
-  const day=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-  const attendance=JSON.parse(await env.KISS_DATA.get('photo:attendance:'+day)||'{}');
+  const day=photoBusinessDay();
+  const attendance=await readAttendance(env,day,casts);
   if(attendance[castId]===false)return photoResponse({error:'お休みのキャストは選べません'},409);
   const ip=req.headers.get('cf-connecting-ip')||'unknown',rateKey='photo:named:rate:'+ip;
   const rate=Number(await env.KISS_DATA.get(rateKey)||0);
@@ -318,14 +319,14 @@ if(path.startsWith('/photo/')){
   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
   const ids=[...new Set(data.ids.map(String))];
   if(ids.some(id=>!casts.some(c=>c.id===id&&c.active)))return photoResponse({error:'選択したキャストが見つかりません。画面を更新してください'},400);
-  const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-  const attendance=JSON.parse(await env.KISS_DATA.get('photo:attendance:'+today)||'{}');
+  const today=photoBusinessDay();
+  const attendance=await readAttendance(env,today,casts);
   if(ids.some(id=>attendance[id]===false))return photoResponse({error:'休みのキャストは写真指名できません。画面を更新してください'},409);
   const item={id:crypto.randomUUID(),ids,names:ids.map(id=>casts.find(c=>c.id===id).name),table,partySize,guestSelections:groupIds,status:'pending',time:Date.now()};
   const list=await readPhotoRequests(env);
   if(list.some(r=>String(r.table)===table&&r.status!=='cancel'&&new Date(r.time+9*3600000).toISOString().slice(0,10)===today))return photoResponse({error:table+'は本日すでに受付済みです。スタッフに確認してください'},409);
   const sales=JSON.parse(await env.KISS_DATA.get('photo:previous-sales')||'{}');
-  item.schedule=makePhotoSchedule(item,casts.map(c=>({...c,attending:attendance[c.id]!==false})),list.filter(r=>r.status!=='cancel'),sales,JSON.parse(await env.KISS_DATA.get('photo:previous-rank-order')||'[]'));
+  item.schedule=makePhotoSchedule(item,casts.map(c=>({...c,attending:attendance[String(c.id)]!==false})),list.filter(r=>r.status!=='cancel'),sales,JSON.parse(await env.KISS_DATA.get('photo:previous-rank-order')||'[]'));
   const notifyKey='photo:notifications',notifications=JSON.parse(await env.KISS_DATA.get(notifyKey)||'[]');
   notifications.push({id:item.id,type:'写真指名',table,partySize,castName:item.names.join('・'),schedule:item.schedule,time:item.time,ackAt:null});
   await env.KISS_DATA.put(notifyKey,JSON.stringify(notifications.slice(-300)));
