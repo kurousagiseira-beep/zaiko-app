@@ -484,7 +484,18 @@ if(path.startsWith('/photo/')){
   if(item.status!=='pending')return photoResponse({error:'すでに処理されています'},409);
   item.status=data.status;
   await env.KISS_DATA.put('photo:requests',JSON.stringify(list));
-  return photoResponse({ok:true});
+  if(data.status==='cancel'){
+   // 受付取消と同時に同卓の写真指名共有状態を未選択へ戻す。
+   // revisionを増やし、開いたままの端末にも変更を同期する。
+   const day=new Date(item.time+9*3600000).toISOString().slice(0,10);
+   const sharedKey='photo:shared:'+day+':'+String(item.table);
+   const previous=JSON.parse(await env.KISS_DATA.get(sharedKey)||'null');
+   const partySize=Number(previous?.partySize||item.partySize||1);
+   const count=Number.isInteger(partySize)&&partySize>=1&&partySize<=20?partySize:1;
+   const cleared={table:String(item.table),partySize:count,guestSelections:Array.from({length:count},()=>[]),revision:(Number(previous?.revision)||0)+1,updatedAt:Date.now()};
+   await env.KISS_DATA.put(sharedKey,JSON.stringify(cleared),{expirationTtl:86400});
+  }
+  return photoResponse({ok:true,reset:data.status==='cancel'});
  }
  return photoResponse({error:'Not found'},404);
 }
