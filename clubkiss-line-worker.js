@@ -64,7 +64,32 @@ function validPhotoTable(t){return /^(?:[1-9][0-9]{0,2}|VIP[1-9][0-9]{0,2})$/.te
 async function photoTableAllowed(env,t){return validPhotoTable(t)&&(await photoTableList(env)).includes(t)}
 async function readPhotoRequests(env){return JSON.parse(await env.KISS_DATA.get('photo:requests')||'[]')}
 
-export default {async fetch(req,env,ctx){
+async function sendFinishedPhotoSchedules(env,now=Date.now()){
+ const requests=await readPhotoRequests(env);
+ const due=[];
+ for(const r of requests){
+  if(r.status==='cancel'||!Array.isArray(r.schedule)||!r.schedule.length)continue;
+  const end=Math.max(...r.schedule.map(x=>Number(x.endMinute)));
+  if(!Number.isFinite(end))continue;
+  const jstDay=new Date(r.time+9*3600000).toISOString().slice(0,10);
+  const endAt=Date.parse(jstDay+'T00:00:00Z')-9*3600000+end*60000;
+  if(endAt<=now&&endAt>=now-24*3600000)due.push({request:r,endAt});
+ }
+ if(!due.length)return;
+ const key='photo:notifications';
+ const notifications=JSON.parse(await env.KISS_DATA.get(key)||'[]');
+ const pushed=[];
+ for(const {request:r,endAt} of due){
+  const id='finish:'+r.id;
+  if(notifications.some(x=>x.id===id))continue;
+  const notice={id,type:'新規接客時間終了',table:r.table,castName:'送り確認をお願いします',time:endAt,ackAt:null,sourceRequestId:r.id};
+  notifications.push(notice);pushed.push(notice);
+ }
+ if(!pushed.length)return;
+ await env.KISS_DATA.put(key,JSON.stringify(notifications.slice(-300)));
+ await Promise.allSettled(pushed.map(x=>sendOrderPush(env,x)));
+}
+export default {async scheduled(event,env,ctx){ctx.waitUntil(sendFinishedPhotoSchedules(env,event.scheduledTime||Date.now()))},async fetch(req,env,ctx){
 const url=new URL(req.url),path=url.pathname;
 if(path==='/')return new Response(page,{headers:{'content-type':'text/html;charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 
