@@ -9,7 +9,7 @@ async function valid(req,env){const [exp,sig]=cookie(req).split('.');if(!exp||!s
 const photoCors={'access-control-allow-origin':'https://kurousagiseira-beep.github.io','access-control-allow-methods':'GET,POST,OPTIONS','access-control-allow-headers':'Content-Type','vary':'Origin'};
 function photoResponse(obj,status=200){return response(obj,status,photoCors)}
 function photoClock(m){return String(Math.floor(m/60)%24).padStart(2,'0')+':'+String(m%60).padStart(2,'0')}
-function makePhotoSchedule(item,casts,previous){
+function makePhotoSchedule(item,casts,previous,sales={}){
  const jp=new Date(item.time+9*3600000);
  const day=jp.toISOString().slice(0,10);
  let minute=jp.getUTCHours()*60+jp.getUTCMinutes()+3+(jp.getUTCSeconds()>0?1:0);
@@ -18,11 +18,12 @@ function makePhotoSchedule(item,casts,previous){
  const chosen=new Set(item.ids.map(String));
  const registered=casts.filter(c=>c.name&&String(c.name).trim()&&c.attending!==false);
  const priority=registered.filter(c=>chosen.has(String(c.id)));
- const others=registered.filter(c=>!chosen.has(String(c.id)));
- const groups=[...priority.map(c=>[c])];
+ const others=registered.filter(c=>!chosen.has(String(c.id))).sort((a,b)=>(Number(sales[String(a.id)])||0)-(Number(sales[String(b.id)])||0)||String(a.name).localeCompare(String(b.name),'ja'));
+ const groups=[];
  for(let i=0;i<others.length;i+=2)groups.push(others.slice(i,i+2));
+ for(const c of priority)groups.push([c]);
  if(!groups.length)return [];
- const durations=groups.map((g,i)=>i<priority.length?15:5);
+ const durations=groups.map(g=>g.some(c=>chosen.has(String(c.id)))?15:5);
  const schedule=[];
  groups.forEach((group,i)=>{const startMinute=minute;minute+=durations[i];for(const c of group)schedule.push({name:c.name,start:photoClock(startMinute),end:photoClock(minute),startMinute,endMinute:minute,priority:chosen.has(String(c.id)),duration:durations[i]})});
  return schedule;
@@ -204,7 +205,8 @@ if(path.startsWith('/photo/')){
   const item={id:crypto.randomUUID(),ids,names:ids.map(id=>casts.find(c=>c.id===id).name),table,partySize,guestSelections:groupIds,status:'pending',time:Date.now()};
   const list=await readPhotoRequests(env);
   if(list.some(r=>String(r.table)===table&&r.status!=='cancel'&&new Date(r.time+9*3600000).toISOString().slice(0,10)===today))return photoResponse({error:table+'は本日すでに受付済みです。スタッフに確認してください'},409);
-  item.schedule=makePhotoSchedule(item,casts.map(c=>({...c,attending:attendance[c.id]!==false})),list.filter(r=>r.status!=='cancel'));
+  const sales=JSON.parse(await env.KISS_DATA.get('photo:previous-sales')||'{}');
+  item.schedule=makePhotoSchedule(item,casts.map(c=>({...c,attending:attendance[c.id]!==false})),list.filter(r=>r.status!=='cancel'),sales);
   const groupId=await env.KISS_DATA.get('groupId');
   if(!groupId)return photoResponse({error:'LINEグループが未登録です'},409);
   const scheduleText=item.schedule.map(r=>r.start+'〜'+r.end+'  '+r.name+(r.priority?' ★写真指名':'')).join('\n');
@@ -244,6 +246,20 @@ if(path.startsWith('/photo/')){
   const month=today.slice(0,7),day={},monthly={};
   for(const r of list){if(r.status==='cancel')continue;const date=new Date(r.time+9*3600000).toISOString().slice(0,10);for(const id of new Set((r.ids||[]).map(String))){const name=(r.names||[])[(r.ids||[]).map(String).indexOf(id)]||id;if(date===today)day[name]=(day[name]||0)+1;if(date.startsWith(month))monthly[name]=(monthly[name]||0)+1}}
   return photoResponse({date:today,month,day,monthly,historyLimit:200});
+ }
+ if(path==='/photo/previous-sales'&&req.method==='POST'){
+  const data=await req.json().catch(()=>({}));
+  if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
+  const previous=new Date(Date.now()+9*3600000);previous.setUTCDate(1);previous.setUTCMonth(previous.getUTCMonth()-1);
+  const month=previous.toISOString().slice(0,7);
+  if(data.sales!==undefined){
+   if(!data.sales||typeof data.sales!=='object'||Array.isArray(data.sales))return photoResponse({error:'売上データが不正です'},400);
+   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
+   const allowed=new Set(casts.map(c=>String(c.id)));
+   if(Object.keys(data.sales).some(id=>!allowed.has(id)||!Number.isFinite(Number(data.sales[id]))||Number(data.sales[id])<0))return photoResponse({error:'売上の数値を確認してください'},400);
+   await env.KISS_DATA.put('photo:previous-sales',JSON.stringify(Object.fromEntries(Object.entries(data.sales).map(([id,n])=>[id,Number(n)]))));
+  }
+  return photoResponse({month,sales:JSON.parse(await env.KISS_DATA.get('photo:previous-sales')||'{}')});
  }
  if(path==='/photo/all-rankings'&&req.method==='POST'){
   const data=await req.json().catch(()=>({}));
@@ -300,7 +316,8 @@ if(path.startsWith('/photo/')){
   item.editHistory.push({time:Date.now(),before,after:{table,partySize,ids,names:item.names}});
   const attendance=await readAttendance(env,today,casts);
   const earlier=list.filter(r=>r.id!==item.id&&r.status!=='cancel'&&r.time<item.time);
-  item.schedule=makePhotoSchedule(item,casts.map(c=>({...c,attending:attendance[c.id]!==false})),earlier);
+  const sales=JSON.parse(await env.KISS_DATA.get('photo:previous-sales')||'{}');
+  item.schedule=makePhotoSchedule(item,casts.map(c=>({...c,attending:attendance[c.id]!==false})),earlier,sales);
   await env.KISS_DATA.put('photo:requests',JSON.stringify(list));
   return photoResponse({ok:true,item});
  }
