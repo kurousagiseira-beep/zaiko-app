@@ -85,18 +85,23 @@ if(path.startsWith('/photo/')){
   }
   return photoResponse({date:today,attendance:state});
  }
- if(path==='/photo/table-presence'&&req.method==='POST'){
+ if(path==='/photo/table-status'&&req.method==='GET'){
+  const day=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  const tables=['2','3','4','5','6','7','8','9','VIP1','VIP2','VIP3'];
+  const list=await readPhotoRequests(env);
+  const closed=await Promise.all(tables.map(t=>env.KISS_DATA.get('photo:closed:'+day+':'+t)));
+  return photoResponse({tables:Object.fromEntries(tables.map((t,i)=>{
+    const latest=list.filter(r=>String(r.table)===t&&r.status!=='cancel'&&new Date(r.time+9*3600000).toISOString().slice(0,10)===day).sort((a,b)=>b.time-a.time)[0];
+    return [t,!!latest&&(!closed[i]||Number(closed[i])<latest.time)];
+  }))});
+ }
+ if(path==='/photo/table-close'&&req.method==='POST'){
   const data=await req.json().catch(()=>({})),table=String(data.table||'');
+  if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
   if(!/^(?:[2-9]|VIP[1-3])$/.test(table))return photoResponse({error:'卓番号が不正です'},400);
   const day=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-  await env.KISS_DATA.put('photo:presence:'+day+':'+table,String(Date.now()),{expirationTtl:180});
+  await env.KISS_DATA.put('photo:closed:'+day+':'+table,String(Date.now()),{expirationTtl:86400});
   return photoResponse({ok:true});
- }
- if(path==='/photo/table-presence'&&req.method==='GET'){
-  const tables=['2','3','4','5','6','7','8','9','VIP1','VIP2','VIP3'];
-  const day=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-  const values=await Promise.all(tables.map(t=>env.KISS_DATA.get('photo:presence:'+day+':'+t)));
-  return photoResponse({tables:Object.fromEntries(tables.map((t,i)=>[t,!!values[i]&&Date.now()-Number(values[i])<180000])),windowSeconds:180});
  }
  if(path==='/photo/shared'&&(req.method==='GET'||req.method==='POST')){
   const data=req.method==='POST'?await req.json().catch(()=>({})):{table:url.searchParams.get('table')};
@@ -142,6 +147,11 @@ if(path.startsWith('/photo/')){
   const table=String(data.table||''),kind=String(data.kind||''),castId=String(data.castId||'');
   if(!/^(?:[2-9]|VIP[1-3])$/.test(table))return photoResponse({error:'卓番号を選択してください'},400);
   if(!['送り指名','飲み直し'].includes(kind))return photoResponse({error:'通知の種類を選択してください'},400);
+  const day=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  const list=await readPhotoRequests(env);
+  const latest=list.filter(r=>String(r.table)===table&&r.status!=='cancel'&&new Date(r.time+9*3600000).toISOString().slice(0,10)===day).sort((a,b)=>b.time-a.time)[0];
+  const closed=Number(await env.KISS_DATA.get('photo:closed:'+day+':'+table)||0);
+  if(!latest||closed>=latest.time)return photoResponse({error:'この席は新規受付中ではありません'},409);
   const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
   const cast=casts.find(c=>String(c.id)===castId&&c.active!==false);
   if(!cast)return photoResponse({error:'キャストを選択してください'},400);
