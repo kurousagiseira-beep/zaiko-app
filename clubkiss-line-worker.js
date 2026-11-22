@@ -35,7 +35,11 @@ function makePhotoSchedule(item,casts,previous,sales={},rankOrder=[]){
  for(let i=0;i<others.length;i+=2)groups.push(others.slice(i,i+2));
  for(const c of priority)groups.push([c]);
  if(!groups.length)return [];
- const durations=groups.map(g=>g.some(c=>chosen.has(String(c.id)))?15:5);
+ // 全グループ同一持ち時間。合計60分を超えない最大の整数分数を使う。
+ // 60グループ超の場合は1分枠でも収まらないため、先頭60グループに限定する。
+ if(groups.length>60)groups.length=60;
+ const slotMinutes=Math.max(1,Math.floor(60/groups.length));
+ const durations=groups.map(()=>slotMinutes);
  const schedule=[];
  groups.forEach((group,i)=>{const startMinute=minute;minute+=durations[i];for(const c of group)schedule.push({name:c.name,start:photoClock(startMinute),end:photoClock(minute),startMinute,endMinute:minute,priority:chosen.has(String(c.id)),duration:durations[i]})});
  return schedule;
