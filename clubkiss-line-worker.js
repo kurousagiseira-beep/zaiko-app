@@ -6,6 +6,18 @@ function response(obj,status=200,headers={}){return new Response(JSON.stringify(
 function cookie(req){return (req.headers.get('cookie')||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('kiss_session='))?.slice(13)||''}
 async function valid(req,env){const [exp,sig]=cookie(req).split('.');if(!exp||!sig||!/^\d+$/.test(exp)||Number(exp)<Date.now())return false;return (await mac(env.STAFF_PIN,exp))===sig}
 
+
+const PUSH_PUBLIC_KEY='BG-HVtZNfdgnE0VklL0DeHfYvAJBac4cBRHVT9F5cm_ANb5H7QdjJdpbQE7nHVBFmW3OmunisUBfNrVOLQvSAQA';
+const pushEnc=new TextEncoder();
+function pushB64(bytes){let str='';for(const b of bytes)str+=String.fromCharCode(b);return btoa(str).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'')}
+function pushBytes(str){const bin=atob(str.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-str.length%4)%4));return Uint8Array.from(bin,c=>c.charCodeAt(0))}
+function pushConcat(...arrays){const result=new Uint8Array(arrays.reduce((n,a)=>n+a.length,0));let at=0;for(const a of arrays){result.set(a,at);at+=a.length}return result}
+async function pushHmac(key,data){const k=await crypto.subtle.importKey('raw',key,{name:'HMAC',hash:'SHA-256'},false,['sign']);return new Uint8Array(await crypto.subtle.sign('HMAC',k,data))}
+async function pushExpand(prk,info,length){let output=new Uint8Array(0),prev=new Uint8Array(0),counter=1;while(output.length<length){prev=await pushHmac(prk,pushConcat(prev,info,new Uint8Array([counter++])));output=pushConcat(output,prev)}return output.slice(0,length)}
+async function pushPayload(subscription,content){const client=pushBytes(subscription.keys.p256dh),auth=pushBytes(subscription.keys.auth),salt=crypto.getRandomValues(new Uint8Array(16));const pair=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveBits']);const server=new Uint8Array(await crypto.subtle.exportKey('raw',pair.publicKey));const clientKey=await crypto.subtle.importKey('raw',client,{name:'ECDH',namedCurve:'P-256'},false,[]);const shared=new Uint8Array(await crypto.subtle.deriveBits({name:'ECDH',public:clientKey},pair.privateKey,256));const authPrk=await pushHmac(auth,shared);const ikm=await pushExpand(authPrk,pushConcat(pushEnc.encode('WebPush: info'),new Uint8Array([0]),client,server),32);const prk=await pushHmac(salt,ikm);const cek=await pushExpand(prk,pushEnc.encode('Content-Encoding: aes128gcm\\0'),16);const nonce=await pushExpand(prk,pushEnc.encode('Content-Encoding: nonce\\0'),12);const key=await crypto.subtle.importKey('raw',cek,{name:'AES-GCM'},false,['encrypt']);const encrypted=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv:nonce},key,pushConcat(pushEnc.encode(JSON.stringify(content)),new Uint8Array([2]))));return pushConcat(salt,new Uint8Array([0,0,16,0,server.length]),server,encrypted)}
+async function pushVapid(endpoint,privateKey){const raw=pushBytes(privateKey);if(raw.length!==32)throw Error('Invalid VAPID private key');const pub=pushBytes(PUSH_PUBLIC_KEY);const key=await crypto.subtle.importKey('jwk',{kty:'EC',crv:'P-256',x:pushB64(pub.slice(1,33)),y:pushB64(pub.slice(33,65)),d:pushB64(raw),ext:true}, {name:'ECDSA',namedCurve:'P-256'},false,['sign']);const audience=new URL(endpoint).origin;const head=pushB64(pushEnc.encode(JSON.stringify({typ:'JWT',alg:'ES256'})));const body=pushB64(pushEnc.encode(JSON.stringify({aud:audience,exp:Math.floor(Date.now()/1000)+3600,sub:'mailto:clubkiss-notify@example.com'})));const input=head+'.'+body;const sig=new Uint8Array(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},key,pushEnc.encode(input)));return input+'.'+pushB64(sig)}
+async function sendOrderPush(env,item){if(!env.PUSH_VAPID_PRIVATE_KEY)return;const raw=await env.KISS_DATA.get('photo:push:owner');if(!raw)return;const sub=JSON.parse(raw);try{const endpoint=new URL(sub.endpoint);if(endpoint.protocol!=='https:'||!['web.push.apple.com','fcm.googleapis.com','updates.push.services.mozilla.com'].some(h=>endpoint.hostname===h||endpoint.hostname.endsWith('.'+h)))throw Error('Invalid push endpoint');const body=await pushPayload(sub,{title:'🔔 CLUB KISS '+item.type,body:item.table+'卓｜'+item.castName+(item.can?'｜'+item.can+' ×'+item.quantity:''),url:'./notify.html?order='+encodeURIComponent(item.id),id:item.id});const token=await pushVapid(sub.endpoint,env.PUSH_VAPID_PRIVATE_KEY);const r=await fetch(sub.endpoint,{method:'POST',headers:{'TTL':'86400','Content-Encoding':'aes128gcm','Content-Type':'application/octet-stream','Authorization':'vapid t='+token+', k='+PUSH_PUBLIC_KEY},body});if(r.status===404||r.status===410)await env.KISS_DATA.delete('photo:push:owner');if(!r.ok)console.error('push delivery failed',r.status)}catch(e){console.error('push error',String(e).slice(0,200))}}
+
 const photoCors={'access-control-allow-origin':'https://kurousagiseira-beep.github.io','access-control-allow-methods':'GET,POST,OPTIONS','access-control-allow-headers':'Content-Type','vary':'Origin'};
 function photoResponse(obj,status=200){return response(obj,status,photoCors)}
 function photoClock(m){return String(Math.floor(m/60)%24).padStart(2,'0')+':'+String(m%60).padStart(2,'0')}
@@ -43,7 +55,7 @@ async function readAttendance(env,day,casts){
 }
 async function readPhotoRequests(env){return JSON.parse(await env.KISS_DATA.get('photo:requests')||'[]')}
 
-export default {async fetch(req,env){
+export default {async fetch(req,env,ctx){
 const url=new URL(req.url),path=url.pathname;
 if(path==='/')return new Response(page,{headers:{'content-type':'text/html;charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 
@@ -184,6 +196,17 @@ if(path.startsWith('/photo/')){
   await env.KISS_DATA.put(historyKey,JSON.stringify(history.slice(-200)));
   return photoResponse({ok:true,id,table,kind,castName:cast.name,corrected:!!previous});
  }
+ if(path==='/photo/push-key'&&req.method==='GET')return photoResponse({publicKey:PUSH_PUBLIC_KEY,configured:!!env.PUSH_VAPID_PRIVATE_KEY});
+ if(path==='/photo/push-subscribe'&&req.method==='POST'){
+  const data=await req.json().catch(()=>({}));
+  if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
+  if(!env.PUSH_VAPID_PRIVATE_KEY)return photoResponse({error:'CloudflareにPUSH_VAPID_PRIVATE_KEYを設定してください'},503);
+  const sub=data.subscription;
+  if(!sub||typeof sub.endpoint!=='string'||!sub.keys||typeof sub.keys.p256dh!=='string'||typeof sub.keys.auth!=='string')return photoResponse({error:'通知登録データが不正です'},400);
+  try{const url=new URL(sub.endpoint);if(url.protocol!=='https:'||!['web.push.apple.com','fcm.googleapis.com','updates.push.services.mozilla.com'].some(h=>url.hostname===h||url.hostname.endsWith('.'+h)))throw Error('Invalid endpoint')}catch(e){return photoResponse({error:'通知先が不正です'},400)}
+  await env.KISS_DATA.put('photo:push:owner',JSON.stringify({endpoint:sub.endpoint,keys:{p256dh:sub.keys.p256dh,auth:sub.keys.auth}}));
+  return photoResponse({ok:true});
+ }
  if(path==='/photo/notifications'&&req.method==='POST'){
   const data=await req.json().catch(()=>({}));
   if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
@@ -223,6 +246,7 @@ if(path.startsWith('/photo/')){
   const key='photo:notifications',notifications=JSON.parse(await env.KISS_DATA.get(key)||'[]');
   notifications.push(notification);
   await env.KISS_DATA.put(key,JSON.stringify(notifications.slice(-300)));
+  ctx.waitUntil(sendOrderPush(env,notification));
   history.push({id,table,castId,castName:cast.name,can,plan,time});
   await env.KISS_DATA.put(historyKey,JSON.stringify(history.slice(-100)),{expirationTtl:172800});
   await env.KISS_DATA.put(rateKey,String(rate+1),{expirationTtl:900});
@@ -259,6 +283,7 @@ if(path.startsWith('/photo/')){
   const notifyKey='photo:notifications',notifications=JSON.parse(await env.KISS_DATA.get(notifyKey)||'[]');
   notifications.push({id:item.id,type:'写真指名',table,partySize,castName:item.names.join('・'),schedule:item.schedule,time:item.time,ackAt:null});
   await env.KISS_DATA.put(notifyKey,JSON.stringify(notifications.slice(-300)));
+  ctx.waitUntil(sendOrderPush(env,notifications[notifications.length-1]));
   list.push(item);
   await env.KISS_DATA.put('photo:requests',JSON.stringify(list.slice(-200)));
   await env.KISS_DATA.put(key,String(n+1),{expirationTtl:900});
