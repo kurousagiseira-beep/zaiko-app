@@ -186,31 +186,6 @@ if(path.startsWith('/photo/')){
  }
  if(path==='/photo/named-entry'&&req.method==='POST'){
   const data=await req.json().catch(()=>({}));
-  const table=String(data.table||''),castId=String(data.castId||''),can=String(data.can||'');
-  const cans=['スラット ピーチ','スラット グレフル','スラット アロエ','スラット シャルドネ','角ハイ','はなよい'];
-  if(!/^(?:[2-9]|VIP[1-3])$/.test(table))return photoResponse({error:'卓番号が不正です'},400);
-  if(!cans.includes(can)||data.plan!=='2時間飲み放題')return photoResponse({error:'飲み放題プランまたは缶ものが不正です'},400);
-  const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
-  const cast=casts.find(c=>String(c.id)===castId&&c.active!==false);
-  if(!cast)return photoResponse({error:'指名キャストを確認してください'},400);
-  const day=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-  const attendance=JSON.parse(await env.KISS_DATA.get('photo:attendance:'+day)||'{}');
-  if(attendance[castId]===false)return photoResponse({error:'選択キャストは本日お休みです'},409);
-  const requests=await readPhotoRequests(env);
-  const closed=Number(await env.KISS_DATA.get('photo:closed:'+day+':'+table)||0);
-  if(requests.some(r=>String(r.table)===table&&r.status!=='cancel'&&r.time>closed&&new Date(r.time+9*3600000).toISOString().slice(0,10)===day))return photoResponse({error:'この卓はすでに受付済みです'},409);
-  const key='photo:named:'+day+':'+table;
-  if(await env.KISS_DATA.get(key))return photoResponse({error:'この卓の新規指名はすでに送信されています'},409);
-  const groupId=await env.KISS_DATA.get('groupId');
-  if(!groupId)return photoResponse({error:'LINEグループが未登録です'},409);
-  const msg=['✨ CLUB KISS 新規指名','卓番号：'+table+'卓','指名キャスト：'+cast.name,'飲み放題：2時間','缶ものサービス：'+can+' × 2本（同じ種類）'].join('\\n');
-  const line=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'content-type':'application/json'},body:JSON.stringify({to:groupId,messages:[{type:'text',text:msg}]})});
-  if(!line.ok)return photoResponse({error:'LINE送信に失敗しました'},502);
-  await env.KISS_DATA.put(key,JSON.stringify({time:Date.now(),castId,castName:cast.name,can,plan:'2時間飲み放題'}),{expirationTtl:86400});
-  return photoResponse({ok:true,table,castName:cast.name,can});
- }
- if(path==='/photo/named-entry'&&req.method==='POST'){
-  const data=await req.json().catch(()=>({}));
   const table=String(data.table||'').trim(),castId=String(data.castId||''),can=String(data.can||''),plan=String(data.plan||'');
   const allowedCans=['瓶ビール','スラットピーチ','スラットシャルドネ','スラットアロエ','スラットレモン','オレンジジュース','アップルジュース','パイナップルジュース','コーラ','レッドブル'];
   if(!/^(?:[2-9]|VIP[1-3])$/.test(table))return photoResponse({error:'卓番号が不正です'},400);
