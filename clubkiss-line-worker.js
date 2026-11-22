@@ -153,6 +153,20 @@ if(path.startsWith('/photo/')){
   await env.KISS_DATA.put('photo:closed:'+day+':'+table,String(Date.now()),{expirationTtl:86400});
   return photoResponse({ok:true});
  }
+ if(path==='/photo/shared-reset'&&req.method==='POST'){
+  const data=await req.json().catch(()=>({}));
+  if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
+  const table=String(data.table||'').trim();
+  if(!(await photoTableAllowed(env,table)))return photoResponse({error:'卓番号が不正です'},400);
+  const day=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  const key='photo:shared:'+day+':'+table;
+  const current=JSON.parse(await env.KISS_DATA.get(key)||'null');
+  const partySize=Number(data.partySize||current?.partySize||1);
+  if(!Number.isInteger(partySize)||partySize<1||partySize>20)return photoResponse({error:'人数が不正です'},400);
+  const state={table,partySize,guestSelections:Array.from({length:partySize},()=>[]),revision:(current?.revision||0)+1,updatedAt:Date.now()};
+  await env.KISS_DATA.put(key,JSON.stringify(state),{expirationTtl:86400});
+  return photoResponse({ok:true,state});
+ }
  if(path==='/photo/shared'&&(req.method==='GET'||req.method==='POST')){
   const data=req.method==='POST'?await req.json().catch(()=>({})):{table:url.searchParams.get('table')};
   const table=String(data.table||'').trim();
