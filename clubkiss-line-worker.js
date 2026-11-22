@@ -123,6 +123,25 @@ if(path.startsWith('/photo/')){
   const active=list.find(r=>String(r.table)===table&&r.status!=='cancel'&&new Date(r.time+9*3600000).toISOString().slice(0,10)===day);
   return photoResponse({occupied:!!active,table});
  }
+ if(path==='/photo/special-notify'&&req.method==='POST'){
+  const data=await req.json().catch(()=>({}));
+  if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
+  const table=String(data.table||''),kind=String(data.kind||''),castId=String(data.castId||'');
+  if(!/^(?:[2-9]|VIP[1-3])$/.test(table))return photoResponse({error:'卓番号を選択してください'},400);
+  if(!['送り指名','飲み直し'].includes(kind))return photoResponse({error:'通知の種類を選択してください'},400);
+  const casts=JSON.parse(await env.KISS_DATA.get('photo:casts')||'[]');
+  const cast=casts.find(c=>String(c.id)===castId&&c.active!==false);
+  if(!cast)return photoResponse({error:'キャストを選択してください'},400);
+  const groupId=await env.KISS_DATA.get('groupId');
+  if(!groupId)return photoResponse({error:'LINEグループが未登録です'},409);
+  const message=['🔔 CLUB KISS｜'+kind+'通知','卓番号：'+(table.startsWith('VIP')?table:table+'卓'),'指名キャスト：'+cast.name,'内容：'+kind].join('\n');
+  const line=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'content-type':'application/json'},body:JSON.stringify({to:groupId,messages:[{type:'text',text:message}]})});
+  if(!line.ok)return photoResponse({error:'LINE通知に失敗しました。再送前にLINEを確認してください'},502);
+  const now=Date.now(),key='photo:special:history',history=JSON.parse(await env.KISS_DATA.get(key)||'[]');
+  history.push({table,kind,castId,castName:cast.name,time:now});
+  await env.KISS_DATA.put(key,JSON.stringify(history.slice(-200)));
+  return photoResponse({ok:true,table,kind,castName:cast.name});
+ }
  if(path==='/photo/submit'&&req.method==='POST'){
   const ip=req.headers.get('cf-connecting-ip')||'unknown',key='photo:rate:'+ip;
   const n=Number(await env.KISS_DATA.get(key)||0);
