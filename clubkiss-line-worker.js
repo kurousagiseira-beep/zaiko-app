@@ -51,7 +51,7 @@ async function readAttendance(env,day,casts){
   if(changed)await env.KISS_DATA.put(key,JSON.stringify(state),{expirationTtl:172800});
   await env.KISS_DATA.put(migrationKey,'done');
  }
- return state;
+ return Object.fromEntries(casts.map(c=>[String(c.id),state[String(c.id)]!==false]));
 }
 async function readPhotoRequests(env){return JSON.parse(await env.KISS_DATA.get('photo:requests')||'[]')}
 
@@ -70,7 +70,7 @@ if(path.startsWith('/photo/')){
   const savedOrder=JSON.parse(await env.KISS_DATA.get('photo:previous-rank-order')||'[]');
   const ranked=savedOrder.length?savedOrder.map(id=>casts.find(c=>String(c.id)===String(id))).filter(c=>c&&c.active!==false):casts.filter(c=>c.active!==false&&Object.prototype.hasOwnProperty.call(sales,String(c.id))).sort((a,b)=>Number(sales[String(b.id)])-Number(sales[String(a.id)])||String(a.name).localeCompare(String(b.name),'ja'));
   const autoRank=new Map(ranked.slice(0,3).map((c,i)=>[String(c.id),i+1]));
-  const visibleCasts=casts.map(c=>({...c,displayNo:savedOrder.length?(autoRank.get(String(c.id))||null):(c.noOverride===0?null:Number.isInteger(c.noOverride)&&c.noOverride>=1&&c.noOverride<=3?c.noOverride:autoRank.get(String(c.id))||null)}));
+  const visibleCasts=casts.map(c=>({...c,displayNo:c.noOverride===0?null:Number.isInteger(c.noOverride)&&c.noOverride>=1&&c.noOverride<=3?c.noOverride:(autoRank.get(String(c.id))||null)}));
   return photoResponse({casts:visibleCasts,attendance,date:today,featureVersion:'rank-order-v2',rankConfigured:savedOrder.length>0});
  }
  if(path==='/photo/publish'&&req.method==='POST'){
