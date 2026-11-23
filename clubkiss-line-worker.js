@@ -287,6 +287,14 @@ if(path.startsWith('/photo/')){
   const data=await req.json().catch(()=>({}));
   if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
   const key='photo:notifications',items=JSON.parse(await env.KISS_DATA.get(key)||'[]');
+  if(data.action==='delete'){
+   const id=String(data.id||'');
+   const index=items.findIndex(x=>x.id===id);
+   if(index<0)return photoResponse({error:'通知が見つかりません'},404);
+   items.splice(index,1);
+   await env.KISS_DATA.put(key,JSON.stringify(items));
+   return photoResponse({ok:true});
+  }
   if(data.action==='ack'){
    const item=items.find(x=>x.id===String(data.id||''));
    if(!item)return photoResponse({error:'通知が見つかりません'},404);
