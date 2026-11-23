@@ -111,7 +111,7 @@ if(path.startsWith('/photo/')){
   const data=await req.json().catch(()=>({}));
   if(!env.STAFF_PIN||String(data.pin)!==env.STAFF_PIN)return photoResponse({error:'スタッフPINが違います'},401);
   if(!Array.isArray(data.casts)||data.casts.length>100)return photoResponse({error:'登録内容が不正です'},400);
-  const casts=data.casts.map(c=>({id:String(c.id),name:String(c.name||'').slice(0,60),bio:String(c.bio||'').slice(0,500),birthday:/^\d{4}-\d{2}-\d{2}$/.test(String(c.birthday||''))?String(c.birthday):'',active:c.active!==false,role:c.role==='officer'?'officer':'general',noOverride:c.noOverride===0?0:[1,2,3].includes(Number(c.noOverride))?Number(c.noOverride):null,photos:Array.isArray(c.photos)?c.photos.filter(p=>typeof p==='string'&&p.startsWith('data:image/')).slice(0,10):[]}));
+  const casts=data.casts.map(c=>({id:String(c.id),name:String(c.name||'').slice(0,60),bio:String(c.bio||'').slice(0,500),birthday:/^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/.test(String(c.birthday||''))?String(c.birthday):'',active:c.active!==false,role:c.role==='officer'?'officer':'general',noOverride:c.noOverride===0?0:[1,2,3].includes(Number(c.noOverride))?Number(c.noOverride):null,photos:Array.isArray(c.photos)?c.photos.filter(p=>typeof p==='string'&&p.startsWith('data:image/')).slice(0,10):[]}));
   if(casts.some(c=>!c.name))return photoResponse({error:'キャスト名を確認してください'},400);
   try{await env.KISS_DATA.put('photo:casts',JSON.stringify(casts))}catch{return photoResponse({error:'写真の容量が大きすぎます。枚数を減らしてください'},413)}
   return photoResponse({ok:true,count:casts.length});
